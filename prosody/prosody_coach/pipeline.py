@@ -11,12 +11,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import feedback as feedback_layer
-from .analysis import analyze
-from .audio import load_audio
-from .compare import compare
-from .models import Comparison, Recording
-from .transcribe import DEFAULT_COMPUTE, DEFAULT_MODEL, TimedWord, Transcript, transcribe
+from prosody_coach import feedback as feedback_layer
+from prosody_coach.analysis import analyze
+from prosody_coach.audio import load_audio
+from prosody_coach.compare import compare
+from prosody_coach.models import Comparison, Recording
+from prosody_coach.transcribe import DEFAULT_COMPUTE, DEFAULT_MODEL, TimedWord, Transcript, transcribe
 
 
 @dataclass
@@ -32,9 +32,7 @@ class PipelineOptions:
 def analyze_recording(
     path: str | Path,
     label: str,
-    options: PipelineOptions,
-    *,
-    initial_prompt: str | None = None,
+    options: PipelineOptions
 ) -> Recording:
     """Load, transcribe and analyse one recording."""
     signal = load_audio(path)
@@ -42,8 +40,7 @@ def analyze_recording(
         path,
         model_size=options.model_size,
         compute_type=options.compute_type,
-        language=options.language,
-        initial_prompt=initial_prompt,
+        language=options.language
     )
     return analyze(signal, transcript.words, transcript.text, label)
 
@@ -58,15 +55,13 @@ def run_shadowing(
 
     reference = analyze_recording(
         reference_path, "reference", options,
-        initial_prompt=options.reference_text,
     )
 
     # Bias the user transcription toward the reference wording. In shadowing
     # the words are known in advance, and this measurably improves word
     # timing accuracy on accented speech.
     user = analyze_recording(
-        user_path, "user", options,
-        initial_prompt=options.user_text or reference.transcript,
+        user_path, "user", options
     )
 
     comparison = compare(reference, user)

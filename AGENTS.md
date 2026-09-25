@@ -8,3 +8,8 @@
 > Commits you push to the connected branch sync back to Lovable and show up in
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
+
+## Python imports
+
+- Always use absolute imports in Python code (e.g. `from prosody_coach.models import Recording`).
+- Never use relative imports (`from .models import ...`, `from . import feedback`), including inside functions.

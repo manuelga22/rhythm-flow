@@ -16,7 +16,7 @@ import json
 import os
 from typing import Any
 
-from .models import (
+from prosody_coach.models import (
     CategoryVerdict,
     Comparison,
     Feedback,

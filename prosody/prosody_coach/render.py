@@ -18,7 +18,7 @@ from __future__ import annotations
 import os
 import sys
 
-from .models import (
+from prosody_coach.models import (
     Comparison,
     IssueType,
     PitchMovement,

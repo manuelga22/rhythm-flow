@@ -16,23 +16,44 @@ from __future__ import annotations
 
 import numpy as np
 
-from .audio import AudioSignal, FeatureTrack, extract_features, semitones
-from .models import (
+from prosody_coach.audio import AudioSignal, FeatureTrack, extract_features, semitones
+from prosody_coach.models import (
     PitchMovement,
     Phrase,
     Prominence,
     Recording,
     Word,
 )
-from .transcribe import TimedWord
+from prosody_coach.transcribe import TimedWord
 
 
 # A gap at least this long is heard as a pause rather than as the natural
 # closure silence of a stop consonant.
 PAUSE_THRESHOLD = 0.18
 
-# A pause at least this long marks a prosodic phrase boundary.
+# A pause at least this long marks a prosodic phrase boundary on its own.
 PHRASE_PAUSE_THRESHOLD = 0.25
+
+# Boundaries are scored rather than hard-thresholded on pause alone, so that a
+# gap sitting a millisecond either side of the threshold is not treated as
+# categorically different. A pause at PHRASE_PAUSE_THRESHOLD scores 1.0 on the
+# pause cue by itself; a shorter gap can still open a phrase when a pitch reset
+# corroborates it.
+BOUNDARY_SCORE_THRESHOLD = 1.0
+
+# Below this, silence is closure noise rather than a candidate boundary. It
+# matches PAUSE_THRESHOLD: anything the pause detector zeroed out cannot
+# contribute here either.
+BOUNDARY_MIN_PAUSE = PAUSE_THRESHOLD
+
+# Weight on the pitch reset that opens a new thought group. Capped well below
+# 1.0: a reset corroborates a marginal pause but must never split a phrase
+# where the speaker did not actually break.
+W_PITCH_RESET = 0.45
+
+# Semitones of upward jump, relative to the previous word, that counts as a
+# full pitch reset.
+PITCH_RESET_SEMITONES = 2.5
 
 # Weights combining the acoustic correlates of prominence. Duration and
 # pitch dominate in American English; intensity is a weaker cue and is
@@ -89,7 +110,7 @@ def analyze(
     _classify_prominence(words)
     _measure_pitch_movement(words, track, baseline)
 
-    phrases = _segment_phrases(words)
+    phrases = _segment_phrases(words, baseline)
     speech_span = words[-1].end - words[0].start
     pause_time = sum(w.pause_after for w in words)
     speaking_time = max(speech_span - pause_time, 1e-6)
@@ -332,35 +353,57 @@ def _measure_pauses(words: list[Word]) -> None:
         words[-1].pause_after = 0.0
 
 
-def _segment_phrases(words: list[Word]) -> list[Phrase]:
+def _boundary_score(word: Word, following: Word, baseline: float) -> float:
+    """Score the juncture after ``word`` as a phrase boundary.
+
+    Two acoustic cues, deliberately no textual one. Transcript punctuation is
+    the recogniser's guess at syntax, drawn partly from a language model
+    rather than from this speaker's delivery; reading it back as prosodic
+    evidence lets a decoding artifact become a measurement, and makes the
+    segmentation shift whenever the decoder's wording does.
+
+    The pause cue is graded rather than thresholded so that 0.249 s and
+    0.251 s are not categorically different, and the reset cue lets a
+    marginal gap open a phrase when the speaker's pitch also jumps back up to
+    start the next one.
+    """
+    if word.pause_after < BOUNDARY_MIN_PAUSE:
+        return 0.0
+
+    score = word.pause_after / PHRASE_PAUSE_THRESHOLD
+
+    if baseline > 0 and word.pitch_mean_hz and following.pitch_mean_hz:
+        jump = (
+            semitones(following.pitch_mean_hz, baseline)
+            - semitones(word.pitch_mean_hz, baseline)
+        )
+        if jump > 0:
+            score += W_PITCH_RESET * min(jump / PITCH_RESET_SEMITONES, 1.0)
+
+    return score
+
+
+def _segment_phrases(words: list[Word], baseline: float) -> list[Phrase]:
     """Group words into prosodic phrases.
 
-    Boundaries are placed at pauses, and at punctuation in the transcript,
-    which reflects the syntactic junctures a speaker tends to group around.
+    Boundaries come from the audio alone: silence, plus the pitch reset that
+    opens a new thought group. See ``_boundary_score``.
     """
     phrases: list[Phrase] = []
     current: list[Word] = []
 
-    for word in words:
+    for index, word in enumerate(words):
         current.append(word)
-        ends_clause = word.text.rstrip().endswith((",", ".", "?", "!", ";", ":"))
-        if word.pause_after >= PHRASE_PAUSE_THRESHOLD or ends_clause:
+        if index + 1 >= len(words):
+            continue
+        if _boundary_score(word, words[index + 1], baseline) >= BOUNDARY_SCORE_THRESHOLD:
             phrases.append(Phrase(words=current))
             current = []
 
     if current:
         phrases.append(Phrase(words=current))
 
-    # Merge runaway-short phrases into their neighbour: a one-word "phrase"
-    # produced by a stray comma is not a thought group.
-    merged: list[Phrase] = []
-    for phrase in phrases:
-        if merged and len(phrase.words) == 1 and phrase.words[0].pause_after == 0.0:
-            merged[-1].words.extend(phrase.words)
-        else:
-            merged.append(phrase)
-
-    return merged or [Phrase(words=list(words))]
+    return phrases or [Phrase(words=list(words))]
 
 
 def _syllable_estimate(word: str) -> int:

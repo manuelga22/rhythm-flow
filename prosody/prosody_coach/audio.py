@@ -10,6 +10,12 @@ That is deliberately a modest algorithm: it is implemented in numpy alone,
 has no native dependencies, and is accurate enough for the question this
 product actually asks, which is "did the pitch rise or fall across this
 word, and was the peak here or there" rather than "what is the exact Hz".
+
+This modules takes an audio file and hands back an AudioSignal guaranteed to be
+mono, 16kHz and have normalized values (-1.0 to 1.0) in every frame.
+
+This module is designed to read .WAV files, it will try to read other formats
+using ffmpeg but this tool isn't guaranteed to be there.
 """
 
 from __future__ import annotations
@@ -39,6 +45,12 @@ F0_MAX_HZ = 400.0
 # as unvoiced (silence, or a voiceless consonant) and excluded from pitch
 # statistics rather than being recorded as 0 Hz, which would corrupt means.
 VOICING_THRESHOLD = 0.35
+
+# Every audio file that comes in will come out at 16kHz
+# 16 kHz contains all the information we need to do prosodical analysis.
+# The human voice mostly falls below 4 kHz, meaning 16 kHz is more than 
+# enough for clear speech, voice calls, and voice recognition software.
+TARGET_RATE = 16000
 
 
 class AudioError(RuntimeError):
@@ -84,7 +96,7 @@ class FeatureTrack:
         return values[~np.isnan(values)]
 
 
-def load_audio(path: str | Path, target_rate: int = 16000) -> AudioSignal:
+def load_audio(path: str | Path, target_rate: int = TARGET_RATE) -> AudioSignal:
     """Load any audio file as mono float32 at ``target_rate``.
 
     Plain PCM WAV is read with the standard library. Anything else is routed
@@ -102,7 +114,8 @@ def load_audio(path: str | Path, target_rate: int = 16000) -> AudioSignal:
             # Fall through to ffmpeg: the extension may lie, or the file may
             # use a compressed WAV codec the wave module cannot read.
             pass
-
+    # if people enter other files not in .wav format, we will try to lead them using
+    # ffmpeg
     return _load_via_ffmpeg(path, target_rate)
 
 
@@ -113,6 +126,8 @@ def _load_wav(path: Path, target_rate: int) -> AudioSignal:
         rate = handle.getframerate()
         frames = handle.readframes(handle.getnframes())
 
+    # Data will contain the frames respresented as normalized values (-1.0 to +1.0)
+    # 1.0 means the audio was as loud as it could be, 0.0 means no sound.
     if width == 2:
         data = np.frombuffer(frames, dtype="<i2").astype(np.float32) / 32768.0
     elif width == 4:
@@ -122,9 +137,11 @@ def _load_wav(path: Path, target_rate: int) -> AudioSignal:
     else:
         raise AudioError(f"Unsupported WAV sample width: {width} bytes")
 
+    # Collapse stereo to mono
     if channels > 1:
         data = data.reshape(-1, channels).mean(axis=1)
 
+    # Convert to standard speed (16 kHz)
     if rate != target_rate:
         data = _resample(data, rate, target_rate)
 
@@ -178,6 +195,8 @@ def _resample(data: np.ndarray, source_rate: int, target_rate: int) -> np.ndarra
 def extract_features(signal: AudioSignal) -> FeatureTrack:
     """Compute the frame-level F0 and intensity tracks for a recording."""
     rate = signal.sample_rate
+
+    # hop rate from seconds to sample numbers
     hop = max(1, int(round(FRAME_HOP * rate)))
     window = max(hop * 2, int(round(FRAME_WINDOW * rate)))
     samples = signal.samples
@@ -186,7 +205,9 @@ def extract_features(signal: AudioSignal) -> FeatureTrack:
         pad = np.zeros(window - len(samples), dtype=np.float32)
         samples = np.concatenate([samples, pad])
 
+    # every frames starting position
     starts = np.arange(0, len(samples) - window + 1, hop)
+    # every frames starting second
     times = (starts + window / 2.0) / rate
 
     f0 = np.full(len(starts), np.nan, dtype=np.float64)

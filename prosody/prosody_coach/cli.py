@@ -15,10 +15,10 @@ import json
 import sys
 from pathlib import Path
 
-from .audio import AudioError
-from .models import Comparison
-from .pipeline import PipelineOptions, analyze_recording, run_shadowing
-from .render import (
+from prosody_coach.audio import AudioError
+from prosody_coach.models import Comparison
+from prosody_coach.pipeline import PipelineOptions, analyze_recording, run_shadowing
+from prosody_coach.render import (
     Glyphs,
     Style,
     render_beats,
@@ -28,7 +28,7 @@ from .render import (
     supports_unicode,
     use_utf8_stdout,
 )
-from .transcribe import DEFAULT_COMPUTE, DEFAULT_MODEL, TranscriptionError
+from prosody_coach.transcribe import DEFAULT_COMPUTE, DEFAULT_MODEL, TranscriptionError
 
 
 def build_parser() -> argparse.ArgumentParser:

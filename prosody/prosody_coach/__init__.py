@@ -13,7 +13,7 @@ The design keeps measurement strictly separate from coaching prose:
 Layer B never sees audio, only the structured output of Layer A.
 """
 
-from .models import (
+from prosody_coach.models import (
     Comparison,
     Feedback,
     Issue,
@@ -25,7 +25,7 @@ from .models import (
     Word,
     WordPair,
 )
-from .pipeline import PipelineOptions, build_comparison, run_shadowing
+from prosody_coach.pipeline import PipelineOptions, build_comparison, run_shadowing
 
 __version__ = "0.1.0"
 

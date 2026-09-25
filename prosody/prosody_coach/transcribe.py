@@ -8,11 +8,15 @@ Word timings from Whisper come from cross-attention alignment. They are good
 to roughly 30-50 ms on clean speech, which is adequate for word-level
 prosody: we care about ratios between word durations and about which word
 carries a pitch peak, not about phoneme boundaries.
+
+This module takes in an audio file and returns a Transcript object, which
+contains all the words that were said and the timing for each.
 """
 
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -72,8 +76,7 @@ def transcribe(
     *,
     model_size: str = DEFAULT_MODEL,
     compute_type: str = DEFAULT_COMPUTE,
-    language: str = "en",
-    initial_prompt: str | None = None,
+    language: str = "en"
 ) -> Transcript:
     """Transcribe ``path`` and return word-level timings.
 
@@ -88,7 +91,6 @@ def transcribe(
         str(path),
         language=language,
         word_timestamps=True,
-        initial_prompt=initial_prompt,
         # Conservative VAD: we must not let the transcriber delete the very
         # pauses the prosody analysis is trying to measure.
         vad_filter=True,

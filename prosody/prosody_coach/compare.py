@@ -16,8 +16,8 @@ from __future__ import annotations
 
 from difflib import SequenceMatcher
 
-from .audio import semitones
-from .models import (
+from prosody_coach.audio import semitones
+from prosody_coach.models import (
     Comparison,
     Issue,
     IssueType,
@@ -68,7 +68,7 @@ def compare(reference: Recording, user: Recording) -> Comparison:
 
     # Feedback is constructed by the caller; a placeholder keeps the
     # dataclass total so ``Comparison`` is always valid.
-    from .models import Feedback
+    from prosody_coach.models import Feedback
 
     return Comparison(
         reference=reference,
@@ -215,7 +215,7 @@ def _prominence_contrast(recording: Recording) -> float | None:
     with the anchor-to-bridge pitch-height ratio. Higher means more
     pronounced rhythm.
     """
-    from .analysis import _syllable_estimate
+    from prosody_coach.analysis import _syllable_estimate
 
     anchors = [w for w in recording.words if w.prominence is Prominence.ANCHOR]
     others = [w for w in recording.words if w.prominence is not Prominence.ANCHOR]

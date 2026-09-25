@@ -128,8 +128,10 @@ class Word:
 @dataclass
 class Phrase:
     """A prosodic phrase / thought group: smaller than a sentence, larger
-    than a word. Boundaries are placed at pauses and at strong syntactic
-    junctures, since those are what listeners perceive as grouping."""
+    than a word. Boundaries are placed on acoustic evidence alone - silence
+    plus the pitch reset that opens a new group - since those are what
+    listeners perceive as grouping, and they do not depend on how the
+    recogniser happened to punctuate."""
 
     words: list[Word]
 
