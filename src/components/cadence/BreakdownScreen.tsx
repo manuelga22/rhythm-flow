@@ -41,7 +41,7 @@ export function BreakdownScreen({ selectedPhrase, setSelectedPhrase, playingPhra
       <BackButton onClick={onBack} />
       <div className="mt-7 animate-rise">
         <p className="font-mono text-xs uppercase tracking-widest text-primary">02 · Structure</p>
-        <h1 className="mt-3 font-display text-5xl leading-none">PRACTICE THE WHOLE CLIP OR ONE PHRASE.</h1>
+        <h1 className="mt-3 font-display text-4xl leading-none">PRACTICE THE WHOLE CLIP OR ONE PHRASE.</h1>
         <p className="mt-3 text-sm leading-relaxed text-muted-foreground">The arrows show where the voice rises or falls. Select any phrase to isolate it.</p>
       </div>
 
@@ -83,7 +83,7 @@ export function BreakdownScreen({ selectedPhrase, setSelectedPhrase, playingPhra
         </div>
       </section>
 
-      <div className="sticky bottom-24 mt-6 rounded-2xl border border-ink/10 bg-card/95 p-3 shadow-lg backdrop-blur-md">
+      <div className="mt-6 rounded-2xl border border-ink/10 bg-card p-3">
         <div className="grid grid-cols-2 gap-2" role="group" aria-label="Practice scope">
           <Button onClick={() => setSelectedPhrase(null)} variant={selectedPhrase ? "outline" : "default"} className="h-11 rounded-xl shadow-none">Full clip</Button>
           <Button onClick={() => {
