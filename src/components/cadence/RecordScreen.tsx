@@ -36,7 +36,7 @@ export function RecordScreen({ kind, recording, seconds, onRecord, onBack, onAna
       </section>
       {isShadow ? (
         <Button onClick={() => setShowTranscript((value) => !value)} variant="outline" aria-pressed={showTranscript} className="mt-4 h-11 w-full rounded-xl border-ink/15 bg-transparent shadow-none">
-          {showTranscript ? <EyeOff /> : <Eye />} {showTranscript ? "Hide structure" : "Show structure"}
+           {showTranscript ? <EyeOff /> : <Eye />} {showTranscript ? "Hide transcript" : "Show transcript"}
         </Button>
       ) : (
         <div className="mt-5 min-h-32 rounded-xl border border-dashed border-ink/20 p-5 text-center">
