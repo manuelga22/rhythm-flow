@@ -12,3 +12,5 @@
 - [x] Add synchronized full-clip playback to the Structure page
 - [x] Highlight phrases as full-clip playback advances
 - [x] Verify playback controls and progress on mobile and desktop
+- [x] Make structure-line phrases tappable with an isolated-practice card; remove the breath-units list
+- [x] Verify tappable structure flow on mobile
