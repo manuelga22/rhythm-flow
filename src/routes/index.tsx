@@ -115,11 +115,14 @@ function Dashboard({ onStart }: { onStart: () => void }) {
           </div>
         </div>
       </section>
-      <section className="grid gap-7 py-9">
-        <div><p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">01 · Choose</p><h2 className="mt-2 font-display text-2xl">BRING A VOICE</h2><p className="mt-2 text-sm leading-relaxed text-muted-foreground">Use a short video or audio clip from a speaker you want to sound more like.</p></div>
-        <div><p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">02 · Shadow</p><h2 className="mt-2 font-display text-2xl">MATCH THE MUSIC</h2><p className="mt-2 text-sm leading-relaxed text-muted-foreground">Mirror the whole phrase: its strong beats, reductions, links, pauses, and pitch.</p></div>
-        <div><p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">03 · Improvise</p><h2 className="mt-2 font-display text-2xl">MAKE IT YOURS</h2><p className="mt-2 text-sm leading-relaxed text-muted-foreground">Remove the script and carry the same natural rhythm into your own words.</p></div>
-      </section>
+      <Link to="/method" className="group flex items-center justify-between gap-4 border-b border-ink/10 py-9">
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">How it works</p>
+          <h2 className="mt-2 font-display text-2xl">THE METHOD</h2>
+          <p className="mt-1 text-sm leading-relaxed text-muted-foreground">Choose a voice, shadow it, then improvise without the script.</p>
+        </div>
+        <ArrowRight className="size-5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+      </Link>
     </main>
   );
 }
