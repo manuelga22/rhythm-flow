@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowRight, Check, LoaderCircle, Pause, Play } from "lucide-react";
+import { ArrowRight, LoaderCircle, Pause, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { practicePhrases, type PracticePhrase } from "./data";
 import { BackButton } from "./primitives";
