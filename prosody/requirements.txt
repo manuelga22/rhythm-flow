@@ -1,0 +1,12 @@
+# Core analysis. This is the only hard requirement for the prosody math,
+# the comparison layer, the feedback templates and the test suite.
+numpy>=1.24,<3
+
+# Local transcription with word-level timestamps, CPU int8 by default.
+# Pulls in ctranslate2 and onnxruntime; the model weights themselves are
+# downloaded on first run and cached under ~/.cache/huggingface.
+faster-whisper>=1.0.0
+
+# Optional: only needed for `--llm` feedback wording.
+# Everything works offline without it.
+anthropic>=0.40.0

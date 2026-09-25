@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# Local audio and analysis output
+*.wav
+*.mp3
+*.m4a
+*.json
+!requirements.json
+
+# Model caches, should they ever land here
+models/
