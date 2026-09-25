@@ -67,7 +67,7 @@ export function BreakdownScreen({ selectedPhrase, setSelectedPhrase, playingPhra
             const playing = playingPhrase === phrase.id;
             return (
               <div key={phrase.id} className={`grid grid-cols-[minmax(0,1fr)_44px] gap-2 rounded-2xl border p-3 transition-colors ${selected ? "border-primary bg-primary/5" : "border-ink/10 bg-card"}`}>
-                <Button onClick={() => setSelectedPhrase(selected ? null : phrase)} variant="ghost" className="h-auto min-w-0 justify-start gap-3 whitespace-normal rounded-xl px-1 py-1 text-left hover:bg-transparent">
+                <Button onClick={() => setSelectedPhrase(selected ? null : phrase)} variant="ghost" aria-label={`${selected ? "Deselect" : "Select"} phrase ${phrase.id}: ${phrase.text}`} className="h-auto min-w-0 justify-start gap-3 whitespace-normal rounded-xl px-1 py-1 text-left hover:bg-transparent">
                   <span className={`grid size-7 shrink-0 place-items-center rounded-full font-mono text-[10px] ${selected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>{selected ? <Check className="size-4" /> : phrase.id}</span>
                   <span className="min-w-0">
                     <span className="block text-sm leading-relaxed"><AccentPhrase phrase={phrase} /></span>
