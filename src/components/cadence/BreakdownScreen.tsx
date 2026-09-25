@@ -86,7 +86,11 @@ export function BreakdownScreen({ selectedPhrase, setSelectedPhrase, playingPhra
       <div className="sticky bottom-24 mt-6 rounded-2xl border border-ink/10 bg-card/95 p-3 shadow-lg backdrop-blur-md">
         <div className="grid grid-cols-2 gap-2" role="group" aria-label="Practice scope">
           <Button onClick={() => setSelectedPhrase(null)} variant={selectedPhrase ? "outline" : "default"} className="h-11 rounded-xl shadow-none">Full clip</Button>
-          <Button onClick={() => selectedPhrase ?? setSelectedPhrase(practicePhrases[0])} variant={selectedPhrase ? "default" : "outline"} className="h-11 rounded-xl shadow-none">One phrase</Button>
+          <Button onClick={() => {
+            if (selectedPhrase) return;
+            const firstPhrase = practicePhrases[0];
+            if (firstPhrase) setSelectedPhrase(firstPhrase);
+          }} variant={selectedPhrase ? "default" : "outline"} className="h-11 rounded-xl shadow-none">One phrase</Button>
         </div>
         <Button onClick={onContinue} className="mt-2 h-12 w-full rounded-xl bg-primary text-primary-foreground shadow-none hover:bg-primary/90">
           {selectedPhrase ? `Practice phrase ${selectedPhrase.id}` : "Practice full clip"} <ArrowRight />

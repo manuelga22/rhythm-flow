@@ -1,12 +1,13 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { BottomBar } from "@/components/cadence/BottomBar";
+import { BreakdownScreen } from "@/components/cadence/BreakdownScreen";
 import { CompleteScreen } from "@/components/cadence/CompleteScreen";
 import { FeedbackScreen } from "@/components/cadence/FeedbackScreen";
 import { Header } from "@/components/cadence/Header";
 import { RecordScreen } from "@/components/cadence/RecordScreen";
 import { SourceScreen } from "@/components/cadence/SourceScreen";
-import type { Stage } from "@/components/cadence/data";
+import type { PracticePhrase, Stage } from "@/components/cadence/data";
 
 export const Route = createFileRoute("/practice")({
   head: () => ({
@@ -30,6 +31,8 @@ function PracticePage() {
   const [recording, setRecording] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [playing, setPlaying] = useState<"reference" | "you" | null>(null);
+  const [playingPhrase, setPlayingPhrase] = useState<number | null>(null);
+  const [selectedPhrase, setSelectedPhrase] = useState<PracticePhrase | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -42,6 +45,7 @@ function PracticePage() {
     setStage(next);
     setRecording(false);
     setPlaying(null);
+    setPlayingPhrase(null);
     setSeconds(0);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -50,10 +54,13 @@ function PracticePage() {
     <div className="min-h-screen bg-background text-foreground antialiased">
       <Header stage={stage} />
       {stage === "source" && (
-        <SourceScreen mode={sourceMode} setMode={setSourceMode} url={url} setUrl={setUrl} fileRef={fileRef} onBack={() => navigate({ to: "/" })} onContinue={() => go("shadow")} />
+        <SourceScreen mode={sourceMode} setMode={setSourceMode} url={url} setUrl={setUrl} fileRef={fileRef} onBack={() => navigate({ to: "/" })} onContinue={() => go("breakdown")} />
+      )}
+      {stage === "breakdown" && (
+        <BreakdownScreen selectedPhrase={selectedPhrase} setSelectedPhrase={setSelectedPhrase} playingPhrase={playingPhrase} setPlayingPhrase={setPlayingPhrase} onBack={() => go("source")} onContinue={() => go("shadow")} />
       )}
       {stage === "shadow" && (
-        <RecordScreen kind="shadow" recording={recording} seconds={seconds} playing={playing} setPlaying={setPlaying} onRecord={() => setRecording((value) => !value)} onBack={() => go("source")} onAnalyze={() => go("shadowFeedback")} />
+        <RecordScreen kind="shadow" recording={recording} seconds={seconds} playing={playing} setPlaying={setPlaying} onRecord={() => setRecording((value) => !value)} onBack={() => go("breakdown")} onAnalyze={() => go("shadowFeedback")} selectedPhrase={selectedPhrase} />
       )}
       {stage === "shadowFeedback" && <FeedbackScreen kind="shadow" playing={playing} setPlaying={setPlaying} onRetry={() => go("shadow")} onContinue={() => go("improvise")} />}
       {stage === "improvise" && (
