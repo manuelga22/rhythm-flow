@@ -1,6 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowLeft, ArrowRight, BarChart3, Home, Mic } from "lucide-react";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { BottomBar } from "@/components/cadence/BottomBar";
+import { Header } from "@/components/cadence/Header";
 
 export const Route = createFileRoute("/method")({
   head: () => ({
@@ -25,15 +27,9 @@ const steps = [
 function MethodPage() {
   return (
     <div className="min-h-screen bg-background text-foreground antialiased">
-        <header className="sticky top-0 z-20 border-b border-ink/10 bg-background/95 backdrop-blur-md">
-          <div className="grid h-14 grid-cols-[minmax(0,1fr)_auto] items-center px-5">
-            <Link to="/" className="flex cursor-pointer items-baseline gap-2" aria-label="Cadence home">
-              <span className="font-display text-xl">CADENCE</span>
-            </Link>
-          </div>
-        </header>
+        <Header />
 
-        <main className="px-5 pb-32 pt-6">
+        <main className="device-column px-5 pb-32 pt-6">
           <Button asChild variant="ghost" size="sm" className="-ml-3 rounded-full text-muted-foreground hover:bg-ink/5">
             <Link to="/"><ArrowLeft /> Back</Link>
           </Button>
@@ -54,15 +50,11 @@ function MethodPage() {
           </section>
 
           <Button asChild size="lg" className="mt-10 h-14 w-full rounded-2xl bg-primary px-6 text-primary-foreground shadow-none hover:bg-primary/90">
-            <Link to="/">Try the method <ArrowRight /></Link>
+            <Link to="/practice">Try the method <ArrowRight /></Link>
           </Button>
         </main>
 
-        <nav className="fixed bottom-3 left-1/2 z-30 grid w-[calc(100%-1.5rem)] max-w-[400px] -translate-x-1/2 grid-cols-3 rounded-[1.4rem] border border-ink/10 bg-card/95 px-3 pb-[max(0.7rem,env(safe-area-inset-bottom))] pt-2 shadow-lg backdrop-blur-md" aria-label="App navigation">
-          <Button asChild variant="ghost" className="h-12 flex-col gap-0.5 rounded-xl text-[9px] text-muted-foreground"><Link to="/"><Home className="size-5" />Home</Link></Button>
-          <Button asChild variant="ghost" className="h-12 flex-col gap-0.5 rounded-xl text-[9px] text-muted-foreground"><Link to="/"><Mic className="size-5" />Practice</Link></Button>
-          <Button variant="ghost" className="h-12 flex-col gap-0.5 rounded-xl text-[9px] text-muted-foreground"><BarChart3 className="size-5" />Progress</Button>
-        </nav>
+        <BottomBar />
     </div>
   );
 }
