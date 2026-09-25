@@ -147,6 +147,16 @@ export function BreakdownScreen({ selectedPhrase, setSelectedPhrase, playingPhra
           <Button onClick={onContinue} className="mt-4 h-12 w-full rounded-xl bg-primary text-primary-foreground shadow-none hover:bg-primary/90">
             Practice phrase {selectedPhrase.id} <ArrowRight />
           </Button>
+          <Button
+            onClick={() => {
+              setSelectedPhrase(null);
+              onContinue();
+            }}
+            variant="outline"
+            className="mt-2 h-12 w-full rounded-xl border-ink/15 bg-transparent shadow-none hover:bg-ink/5"
+          >
+            Practice the whole clip instead <ArrowRight />
+          </Button>
         </section>
       )}
 
