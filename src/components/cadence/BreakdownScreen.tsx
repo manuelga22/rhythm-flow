@@ -20,7 +20,7 @@ export function BreakdownScreen({ selectedPhrase, setSelectedPhrase, playingPhra
   const [loading, setLoading] = useState(true);
   const [clipPlaying, setClipPlaying] = useState(false);
   const [elapsed, setElapsed] = useState(0);
-  const phraseRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  const phraseRefs = useRef<Record<number, HTMLButtonElement | null>>({});
   const totalSeconds = practicePhrases.reduce((total, phrase) => total + phrase.durationSeconds, 0);
   let phraseBoundary = 0;
   const activePhrase = practicePhrases.find((phrase) => {
@@ -108,51 +108,50 @@ export function BreakdownScreen({ selectedPhrase, setSelectedPhrase, playingPhra
           <p className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground">↗ Rise · ↘ Fall</p>
         </div>
         <p className="mt-3 text-sm leading-7 text-muted-foreground">
-          {practicePhrases.map((phrase, index) => <span key={phrase.id} className={`rounded px-0.5 py-0.5 transition-colors ${clipPlaying && activePhrase?.id === phrase.id ? "bg-primary/15 text-foreground" : ""}`}><AccentPhrase phrase={phrase} />{index < practicePhrases.length - 1 && <span className="mx-1.5 text-ink/25">|</span>}</span>)}
-        </p>
-      </section>
-
-      <section className="mt-7">
-        <div className="flex items-end justify-between gap-4">
-          <div><p className="font-mono text-[10px] uppercase tracking-widest text-primary">Phrases</p><h2 className="mt-1 font-display text-3xl">8 BREATH UNITS</h2></div>
-          <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">31 sec total</span>
-        </div>
-
-        <div className="mt-4 space-y-2">
-          {practicePhrases.map((phrase) => {
+          {practicePhrases.map((phrase, index) => {
             const selected = selectedPhrase?.id === phrase.id;
-            const playing = playingPhrase === phrase.id;
+            const active = clipPlaying && activePhrase?.id === phrase.id;
             return (
-              <div ref={(element) => { phraseRefs.current[phrase.id] = element; }} key={phrase.id} className={`grid grid-cols-[minmax(0,1fr)_44px] gap-2 rounded-2xl border p-3 transition-colors ${clipPlaying && activePhrase?.id === phrase.id ? "border-primary bg-primary/10 ring-1 ring-primary/20" : selected ? "border-primary bg-primary/5" : "border-ink/10 bg-card"}`}>
-                <Button onClick={() => setSelectedPhrase(selected ? null : phrase)} variant="ghost" aria-label={`${selected ? "Deselect" : "Select"} phrase ${phrase.id}: ${phrase.text}`} className="h-auto min-w-0 justify-start gap-3 whitespace-normal rounded-xl px-1 py-1 text-left hover:bg-transparent">
-                  <span className={`grid size-7 shrink-0 place-items-center rounded-full font-mono text-[10px] ${selected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>{selected ? <Check className="size-4" /> : phrase.id}</span>
-                  <span className="min-w-0">
-                    <span className="block text-sm leading-relaxed"><AccentPhrase phrase={phrase} /></span>
-                    <span className="mt-1 block font-mono text-[9px] uppercase tracking-widest text-muted-foreground">{phrase.durationSeconds} sec{phrase.pauseMs ? ` · pause ${phrase.pauseMs} ms` : " · clip end"}</span>
-                  </span>
-                </Button>
-                <Button onClick={() => togglePhrase(phrase.id)} variant="outline" size="icon" aria-label={`${playing ? "Pause" : "Play"} phrase ${phrase.id}`} className="size-11 self-center rounded-full border-ink/15 bg-transparent shadow-none">
-                  {playing ? <Pause className="size-4" /> : <Play className="size-4" />}
-                </Button>
-              </div>
+              <button
+                key={phrase.id}
+                ref={(element) => { phraseRefs.current[phrase.id] = element; }}
+                onClick={() => setSelectedPhrase(selected ? null : phrase)}
+                aria-pressed={selected}
+                aria-label={`${selected ? "Deselect" : "Select"} phrase ${phrase.id}: ${phrase.text}`}
+                className={`rounded px-0.5 py-0.5 text-left transition-colors ${active ? "bg-primary/15 text-foreground" : "hover:bg-ink/5"} ${selected ? "bg-primary/20 ring-1 ring-primary/40" : ""}`}
+              >
+                <AccentPhrase phrase={phrase} />
+                {index < practicePhrases.length - 1 && <span className="mx-1.5 text-ink/25">|</span>}
+              </button>
             );
           })}
-        </div>
+        </p>
+        <p className="mt-3 font-mono text-[9px] uppercase tracking-widest text-muted-foreground">Tap any phrase to practice it on its own.</p>
       </section>
 
-      <div className="mt-6 rounded-2xl border border-ink/10 bg-card p-3">
-        <div className="grid grid-cols-2 gap-2" role="group" aria-label="Practice scope">
-          <Button onClick={() => setSelectedPhrase(null)} variant={selectedPhrase ? "outline" : "default"} className="h-11 rounded-xl shadow-none">Full clip</Button>
-          <Button onClick={() => {
-            if (selectedPhrase) return;
-            const firstPhrase = practicePhrases[0];
-            if (firstPhrase) setSelectedPhrase(firstPhrase);
-          }} variant={selectedPhrase ? "default" : "outline"} className="h-11 rounded-xl shadow-none">One phrase</Button>
+      {selectedPhrase && (
+        <section className="mt-5 animate-rise rounded-2xl border border-primary/30 bg-primary/5 p-4" aria-live="polite">
+          <div className="flex items-center justify-between gap-3">
+            <p className="font-mono text-[10px] uppercase tracking-widest text-primary">Phrase {selectedPhrase.id} selected</p>
+            <Button onClick={() => togglePhrase(selectedPhrase.id)} variant="outline" size="icon" aria-label={`${playingPhrase === selectedPhrase.id ? "Pause" : "Play"} reference for phrase ${selectedPhrase.id}`} className="size-9 shrink-0 rounded-full border-ink/15 bg-transparent shadow-none">
+              {playingPhrase === selectedPhrase.id ? <Pause className="size-4" /> : <Play className="size-4" />}
+            </Button>
+          </div>
+          <p className="mt-2 text-sm leading-7 text-foreground"><AccentPhrase phrase={selectedPhrase} /></p>
+          <p className="mt-2 font-mono text-[9px] uppercase tracking-widest text-muted-foreground">{selectedPhrase.durationSeconds} sec{selectedPhrase.pauseMs ? ` · pause ${selectedPhrase.pauseMs} ms after` : " · clip end"}</p>
+          <Button onClick={onContinue} className="mt-4 h-12 w-full rounded-xl bg-primary text-primary-foreground shadow-none hover:bg-primary/90">
+            Practice phrase {selectedPhrase.id} <ArrowRight />
+          </Button>
+        </section>
+      )}
+
+      {!selectedPhrase && (
+        <div className="mt-6 rounded-2xl border border-ink/10 bg-card p-3">
+          <Button onClick={onContinue} className="h-12 w-full rounded-xl bg-primary text-primary-foreground shadow-none hover:bg-primary/90">
+            Practice full clip <ArrowRight />
+          </Button>
         </div>
-        <Button onClick={onContinue} className="mt-2 h-12 w-full rounded-xl bg-primary text-primary-foreground shadow-none hover:bg-primary/90">
-          {selectedPhrase ? `Practice phrase ${selectedPhrase.id}` : "Practice full clip"} <ArrowRight />
-        </Button>
-      </div>
+      )}
     </main>
   );
 }
