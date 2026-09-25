@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { ArrowRight, Eye, EyeOff, Mic, Pause } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ArrowRight, Eye, EyeOff, Mic, Pause, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { waveA } from "./data";
 import type { PracticePhrase } from "./data";
@@ -10,6 +10,25 @@ export function RecordScreen({ kind, recording, seconds, onRecord, onBack, onAna
   const hasTake = seconds > 0;
   const duration = isShadow ? selectedPhrase?.durationSeconds ?? 31 : 30;
   const [showTranscript, setShowTranscript] = useState(true);
+  const [playing, setPlaying] = useState(false);
+  const [playPos, setPlayPos] = useState(0);
+
+  useEffect(() => { if (recording) { setPlaying(false); setPlayPos(0); } }, [recording]);
+  useEffect(() => {
+    if (!playing) return;
+    const id = window.setInterval(() => {
+      setPlayPos((p) => {
+        const next = p + 0.25;
+        if (next >= seconds) { setPlaying(false); return seconds; }
+        return next;
+      });
+    }, 250);
+    return () => window.clearInterval(id);
+  }, [playing, seconds]);
+  const togglePlayback = () => {
+    if (!playing && playPos >= seconds) setPlayPos(0);
+    setPlaying((v) => !v);
+  };
   return (
     <main className="device-column px-5 pb-28 pt-5">
       <BackButton onClick={onBack} />
@@ -32,7 +51,18 @@ export function RecordScreen({ kind, recording, seconds, onRecord, onBack, onAna
             <p className="mt-2 text-lg leading-relaxed text-background/85">“{selectedPhrase ? selectedPhrase.structure.map((part, index) => part.accent ? <strong key={`${part.text}-${index}`} className="text-background">{part.text}<span className="ml-0.5 text-primary">{part.accent === "up" ? "↗" : "↘"}</span></strong> : part.text) : <>Hey, Benny. Do a flip. So I <strong className="text-background">said↗</strong> yes to every single email for an entire <strong className="text-background">month↗</strong> again...</>}</p>
           </div>
         )}
-        {hasTake && !recording && <Button onClick={onAnalyze} className="mt-6 h-12 w-full rounded-2xl bg-primary text-primary-foreground shadow-none hover:bg-primary/90">See feedback <ArrowRight /></Button>}
+        {hasTake && !recording && (
+          <div className="mt-6 space-y-3">
+            <div className="flex items-center gap-3 rounded-xl border border-background/10 bg-background/5 p-3">
+              <button type="button" onClick={togglePlayback} aria-label={playing ? "Pause your recording" : "Play your recording"} className="flex size-10 shrink-0 items-center justify-center rounded-full bg-background text-foreground">{playing ? <Pause className="size-4" /> : <Play className="size-4" />}</button>
+              <div className="min-w-0 flex-1">
+                <div className="flex justify-between font-mono text-[10px] uppercase tracking-widest text-background/50"><span>Your take</span><span className="tabular-nums">00:{String(Math.floor(playPos)).padStart(2, "0")} / 00:{String(seconds).padStart(2, "0")}</span></div>
+                <div role="progressbar" aria-valuemin={0} aria-valuemax={seconds} aria-valuenow={Math.floor(playPos)} className="mt-2 h-1.5 overflow-hidden rounded-full bg-background/15"><div className="h-full bg-primary transition-[width] duration-200" style={{ width: `${(playPos / seconds) * 100}%` }} /></div>
+              </div>
+            </div>
+            <Button onClick={() => { setPlaying(false); onAnalyze(); }} className="h-12 w-full rounded-2xl bg-primary text-primary-foreground shadow-none hover:bg-primary/90">Get feedback <ArrowRight /></Button>
+          </div>
+        )}
       </section>
       {isShadow ? (
         <Button onClick={() => setShowTranscript((value) => !value)} variant="outline" aria-pressed={showTranscript} className="mt-4 h-11 w-full rounded-xl border-ink/15 bg-transparent shadow-none">
