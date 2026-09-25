@@ -63,7 +63,6 @@ function MethodPage() {
           <Button asChild variant="ghost" className="h-12 flex-col gap-0.5 rounded-xl text-[9px] text-muted-foreground"><Link to="/"><Mic className="size-5" />Practice</Link></Button>
           <Button variant="ghost" className="h-12 flex-col gap-0.5 rounded-xl text-[9px] text-muted-foreground"><BarChart3 className="size-5" />Progress</Button>
         </nav>
-      </div>
     </div>
   );
 }
