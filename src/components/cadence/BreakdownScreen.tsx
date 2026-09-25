@@ -135,7 +135,7 @@ export function BreakdownScreen({ selectedPhrase, setSelectedPhrase, playingPhra
       </section>
 
       {selectedPhrase && (
-        <section className="mt-5 animate-rise rounded-2xl border border-primary/30 bg-primary/5 p-4" aria-live="polite">
+        <section ref={selectedRef} className="mt-5 animate-rise rounded-2xl border border-primary/30 bg-primary/5 p-4" aria-live="polite">
           <div className="flex items-center justify-between gap-3">
             <p className="font-mono text-[10px] uppercase tracking-widest text-primary">Phrase {selectedPhrase.id} selected</p>
             <Button onClick={() => togglePhrase(selectedPhrase.id)} variant="outline" size="icon" aria-label={`${playingPhrase === selectedPhrase.id ? "Pause" : "Play"} reference for phrase ${selectedPhrase.id}`} className="size-9 shrink-0 rounded-full border-ink/15 bg-transparent shadow-none">
