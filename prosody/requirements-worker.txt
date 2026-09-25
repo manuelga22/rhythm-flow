@@ -1,0 +1,11 @@
+# Everything the analysis engine needs, plus what the Supabase worker adds.
+-r requirements.txt
+
+# Row and storage access with the service-role key.
+supabase>=2.10.0
+
+# Loads SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY from the repo-root .env.
+python-dotenv>=1.0.0
+
+# YouTube audio download. Needs ffmpeg on PATH to convert to WAV.
+yt-dlp>=2025.1.1

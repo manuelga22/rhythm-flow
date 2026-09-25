@@ -17,7 +17,8 @@ file, never raw audio.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field, asdict
+import math
+from dataclasses import dataclass, field, fields, asdict
 from enum import Enum
 from typing import Any
 
@@ -124,6 +125,22 @@ class Word:
         stem = self.normalized.replace("'", " ").split()
         return bool(stem) and all(part in FUNCTION_WORDS for part in stem)
 
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Word":
+        """Inverse of ``to_dict`` for one word.
+
+        Unknown keys are ignored and missing or null measurements fall back
+        to the field default, so dicts written by other analyzer versions
+        still load.
+        """
+        known = {f.name for f in fields(cls)}
+        values = {k: v for k, v in data.items() if k in known and v is not None}
+        if "prominence" in values:
+            values["prominence"] = Prominence(values["prominence"])
+        if "pitch_movement" in values:
+            values["pitch_movement"] = PitchMovement(values["pitch_movement"])
+        return cls(**values)
+
 
 @dataclass
 class Phrase:
@@ -202,6 +219,24 @@ class Recording:
 
     def to_dict(self) -> dict[str, Any]:
         return _to_jsonable(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Recording":
+        """Rebuild a Recording from ``to_dict`` output, e.g. a saved
+        ``analyze --json`` file."""
+        summary = {
+            f.name: data[f.name]
+            for f in fields(cls)
+            if f.name not in {"words", "phrases"} and data.get(f.name) is not None
+        }
+        return cls(
+            **summary,
+            words=[Word.from_dict(w) for w in data.get("words", [])],
+            phrases=[
+                Phrase(words=[Word.from_dict(w) for w in p.get("words", [])])
+                for p in data.get("phrases", [])
+            ],
+        )
 
 
 class IssueType(str, Enum):
@@ -308,10 +343,13 @@ def _to_jsonable(obj: Any) -> Any:
 
     ``dataclasses.asdict`` alone leaves Enum members in place, which
     ``json.dumps`` cannot serialise, and it does not know about the computed
-    properties we want in the output.
+    properties we want in the output. Non-finite floats become ``None``.
     """
     if isinstance(obj, Enum):
         return obj.value
+    if isinstance(obj, float) and not math.isfinite(obj):
+        # Unvoiced words have no pitch. JSON (and Postgres jsonb) has no NaN.
+        return None
     if isinstance(obj, (str, int, float, bool)) or obj is None:
         return obj
     if isinstance(obj, dict):

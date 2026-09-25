@@ -5,10 +5,12 @@ import { waveA } from "./data";
 import type { PracticePhrase } from "./data";
 import { BackButton, Waveform } from "./primitives";
 
-export function RecordScreen({ kind, recording, seconds, onRecord, onBack, onAnalyze, selectedPhrase }: { kind: "shadow" | "improvise"; recording: boolean; seconds: number; onRecord: () => void; onBack: () => void; onAnalyze: () => void; selectedPhrase?: PracticePhrase | null }) {
+export function RecordScreen({ kind, recording, seconds, onRecord, onBack, onAnalyze, phrases = [], selectedPhrase }: { kind: "shadow" | "improvise"; recording: boolean; seconds: number; onRecord: () => void; onBack: () => void; onAnalyze: () => void; phrases?: PracticePhrase[]; selectedPhrase?: PracticePhrase | null }) {
   const isShadow = kind === "shadow";
   const hasTake = seconds > 0;
-  const duration = isShadow ? selectedPhrase?.durationSeconds ?? 31 : 30;
+  const targetPhrases = selectedPhrase ? [selectedPhrase] : phrases;
+  const duration = isShadow ? Math.ceil(targetPhrases.reduce((total, phrase) => total + phrase.durationSeconds, 0)) : 30;
+  const transcriptParts = targetPhrases.flatMap((phrase, index) => (index ? [{ text: " " }, ...phrase.structure] : phrase.structure));
   const [showTranscript, setShowTranscript] = useState(true);
   const [playing, setPlaying] = useState(false);
   const [playPos, setPlayPos] = useState(0);
@@ -48,7 +50,7 @@ export function RecordScreen({ kind, recording, seconds, onRecord, onBack, onAna
         {isShadow && showTranscript && (
           <div className="mt-6 rounded-xl border border-background/10 bg-background/5 p-4">
             <span className="font-mono text-[10px] uppercase tracking-widest text-background/50">{selectedPhrase ? `Phrase ${selectedPhrase.id} · selected practice` : "Full clip · bold words carry the beat"}</span>
-            <p className="mt-2 text-lg leading-relaxed text-background/85">“{selectedPhrase ? selectedPhrase.structure.map((part, index) => part.accent ? <strong key={`${part.text}-${index}`} className="text-background">{part.text}<span className="ml-0.5 text-primary">{part.accent === "up" ? "↗" : "↘"}</span></strong> : part.text) : <>Hey, Benny. Do a flip. So I <strong className="text-background">said↗</strong> yes to every single email for an entire <strong className="text-background">month↗</strong> again...</>}</p>
+            <p className="mt-2 text-lg leading-relaxed text-background/85">“{transcriptParts.map((part, index) => part.accent ? <strong key={`${part.text}-${index}`} className="text-background">{part.text}<span className="ml-0.5 text-primary">{part.accent === "up" ? "↗" : "↘"}</span></strong> : part.text)}”</p>
           </div>
         )}
         {hasTake && !recording && (

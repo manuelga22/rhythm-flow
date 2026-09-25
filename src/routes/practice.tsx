@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BottomBar } from "@/components/cadence/BottomBar";
 import { BreakdownScreen } from "@/components/cadence/BreakdownScreen";
 import { CompleteScreen } from "@/components/cadence/CompleteScreen";
@@ -8,6 +8,9 @@ import { Header } from "@/components/cadence/Header";
 import { RecordScreen } from "@/components/cadence/RecordScreen";
 import { SourceScreen } from "@/components/cadence/SourceScreen";
 import type { PracticePhrase, Stage } from "@/components/cadence/data";
+import { useAnalysis } from "@/hooks/use-analysis";
+import type { ClipSource } from "@/hooks/use-clip-player";
+import { youtubeId, type AnalysisSource } from "@/lib/analysis";
 
 export const Route = createFileRoute("/practice")({
   head: () => ({
@@ -27,13 +30,24 @@ function PracticePage() {
   const navigate = useNavigate();
   const [stage, setStage] = useState<Stage>("source");
   const [sourceMode, setSourceMode] = useState<"youtube" | "upload">("youtube");
-  const [url, setUrl] = useState("https://youtube.com/watch?v=prosody-0142");
+  const [url, setUrl] = useState("");
+  const [file, setFile] = useState<File | null>(null);
   const [recording, setRecording] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [playing, setPlaying] = useState<"reference" | "you" | null>(null);
-  const [playingPhrase, setPlayingPhrase] = useState<number | null>(null);
   const [selectedPhrase, setSelectedPhrase] = useState<PracticePhrase | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const { analysis, status: analysisStatus, error: analysisError, submitting, start: startAnalysis } = useAnalysis();
+  const phrases = analysis?.view?.phrases ?? [];
+  const clipTitle = analysis?.view?.title ?? analysis?.title ?? "Reference clip";
+
+  // Uploads play from the file the user just picked, whichever backend
+  // analysed it. TODO: when past analyses can be reopened without the file,
+  // play Supabase uploads from a signed Storage URL instead.
+  const fileUrl = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
+  useEffect(() => () => { if (fileUrl) URL.revokeObjectURL(fileUrl); }, [fileUrl]);
+  const videoId = analysis?.source_key.startsWith("youtube:") ? analysis.source_key.slice("youtube:".length) : youtubeId(url);
+  const clipSource: ClipSource = analysis?.source_type === "upload" ? (fileUrl ? { kind: "audio", url: fileUrl } : null) : videoId ? { kind: "youtube", videoId } : null;
 
   useEffect(() => {
     if (!recording) return;
@@ -45,22 +59,27 @@ function PracticePage() {
     setStage(next);
     setRecording(false);
     setPlaying(null);
-    setPlayingPhrase(null);
     setSeconds(0);
     window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const analyze = (source: AnalysisSource) => {
+    setSelectedPhrase(null);
+    startAnalysis(source);
+    go("breakdown");
   };
 
   return (
     <div className="min-h-screen bg-background text-foreground antialiased">
       <Header stage={stage} />
       {stage === "source" && (
-        <SourceScreen mode={sourceMode} setMode={setSourceMode} url={url} setUrl={setUrl} fileRef={fileRef} onBack={() => navigate({ to: "/" })} onContinue={() => go("breakdown")} />
+        <SourceScreen mode={sourceMode} setMode={setSourceMode} url={url} setUrl={setUrl} file={file} setFile={setFile} fileRef={fileRef} submitError={analysisStatus === "failed" ? analysisError : null} submitting={submitting} onBack={() => navigate({ to: "/" })} onContinue={analyze} />
       )}
       {stage === "breakdown" && (
-        <BreakdownScreen selectedPhrase={selectedPhrase} setSelectedPhrase={setSelectedPhrase} playingPhrase={playingPhrase} setPlayingPhrase={setPlayingPhrase} onBack={() => go("source")} onContinue={() => go("shadow")} />
+        <BreakdownScreen status={analysisStatus} error={analysisError} title={clipTitle} phrases={phrases} clipSource={clipSource} selectedPhrase={selectedPhrase} setSelectedPhrase={setSelectedPhrase} onBack={() => go("source")} onContinue={() => go("shadow")} />
       )}
       {stage === "shadow" && (
-        <RecordScreen kind="shadow" recording={recording} seconds={seconds} onRecord={() => setRecording((value) => !value)} onBack={() => go("breakdown")} onAnalyze={() => go("shadowFeedback")} selectedPhrase={selectedPhrase} />
+        <RecordScreen kind="shadow" recording={recording} seconds={seconds} onRecord={() => setRecording((value) => !value)} onBack={() => go("breakdown")} onAnalyze={() => go("shadowFeedback")} phrases={phrases} selectedPhrase={selectedPhrase} />
       )}
       {stage === "shadowFeedback" && <FeedbackScreen kind="shadow" playing={playing} setPlaying={setPlaying} onRetry={() => go("shadow")} onContinue={() => go("improvise")} />}
       {stage === "improvise" && (

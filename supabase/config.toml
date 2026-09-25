@@ -1,0 +1,20 @@
+# Local Supabase stack for `supabase start`. Only the settings this project
+# relies on are listed; everything else uses the CLI defaults.
+project_id = "rhythm-flow"
+
+[api]
+port = 54321
+
+[db]
+port = 54322
+major_version = 15
+
+[realtime]
+enabled = true
+
+[storage]
+enabled = true
+file_size_limit = "25MiB"
+
+[studio]
+port = 54323

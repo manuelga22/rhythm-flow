@@ -185,6 +185,58 @@ the tool always produces output.
 
 ---
 
+## Worker (web app integration)
+
+The Practice page does not call this package directly. The browser asks
+Supabase for an analysis (`request_analysis` RPC in
+`../supabase/migrations`), which either returns a stored one or queues a
+`processing` row. `prosody_worker` claims queued rows, fetches the audio
+(yt-dlp for YouTube, the `reference-audio` Storage bucket for uploads),
+runs `analyze_recording`, and writes the result back. The page then picks
+the result up over Realtime.
+
+```bash
+pip install -r requirements-worker.txt       # also needs ffmpeg for YouTube
+# SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY come from ../.env
+python -m prosody_worker                      # poll forever
+python -m prosody_worker --once               # drain the queue and exit
+```
+
+Analyses are cached per source (`youtube:<id>` or `upload:<sha256>`),
+Whisper model and `ANALYZER_VERSION`. Bump the version in both
+`prosody_worker/config.py` and `analysis_settings()` in the migration
+when the engine's output changes, so clips get re-analysed.
+
+Each `analyses` row keeps the speaker-level summary (transcript, duration,
+pitch baseline and range, speech and articulation rate, total pause time)
+in typed columns and the full `Recording.to_dict()` in `recording` (jsonb),
+so new per-word measurements need no migration.
+
+### Hosted project
+
+```bash
+npx supabase login
+npx supabase link --project-ref <ref>        # from the dashboard URL
+npx supabase db push                         # applies ../supabase/migrations
+```
+
+Copy `../.env.example` to `../.env` and fill it in from Settings > API.
+The worker and importer load `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY`
+from that file (via python-dotenv); variables set in the shell win.
+
+### Importing CLI analyses
+
+An `analyze --json` file can be saved to the table without re-running
+Whisper. The row is keyed like the browser keys the same source, so asking
+for that clip in the app returns it straight away:
+
+```bash
+python -m prosody_worker.importer analyses/clip.wav.json --audio clip.wav
+python -m prosody_worker.importer analyses/<id>.json --youtube <url>
+```
+
+---
+
 ## Tests
 
 ```bash
@@ -192,7 +244,7 @@ python tests/test_prosody.py     # no pytest needed
 python -m pytest tests/ -v       # if you have pytest
 ```
 
-37 tests, all running on synthetic audio with known ground truth, so they
+55 tests, all running on synthetic audio with known ground truth, so they
 need no recordings and no model download. They cover the pitch tracker
 against known frequencies, anchor and bridge detection, phrase
 segmentation, alignment, rate normalisation, issue ranking, the feedback
