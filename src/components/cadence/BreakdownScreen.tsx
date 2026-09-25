@@ -52,6 +52,11 @@ export function BreakdownScreen({ selectedPhrase, setSelectedPhrase, playingPhra
     phraseRefs.current[activePhrase.id]?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [activePhrase, clipPlaying]);
 
+  const selectedRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (selectedPhrase) selectedRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [selectedPhrase]);
+
   const toggleClip = () => {
     setPlayingPhrase(null);
     if (elapsed >= totalSeconds) setElapsed(0);
