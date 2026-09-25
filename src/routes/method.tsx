@@ -24,12 +24,8 @@ const steps = [
 
 function MethodPage() {
   return (
-    <div className="min-h-screen bg-muted/60 py-0 text-foreground antialiased sm:py-5">
-      <div className="relative mx-auto min-h-screen max-w-[430px] overflow-hidden bg-background sm:min-h-[900px] sm:rounded-[2.75rem] sm:border-[6px] sm:border-ink sm:shadow-2xl">
+    <div className="min-h-screen bg-background text-foreground antialiased">
         <header className="sticky top-0 z-20 border-b border-ink/10 bg-background/95 backdrop-blur-md">
-          <div className="grid h-7 grid-cols-[1fr_auto_1fr] items-center px-6 font-mono text-[9px] font-medium">
-            <span>9:41</span><span className="h-1.5 w-20 rounded-full bg-ink/90" /><span className="text-right">● ▮▮▮</span>
-          </div>
           <div className="grid h-14 grid-cols-[minmax(0,1fr)_auto] items-center px-5">
             <Link to="/" className="flex cursor-pointer items-baseline gap-2" aria-label="Cadence home">
               <span className="font-display text-xl">CADENCE</span>
