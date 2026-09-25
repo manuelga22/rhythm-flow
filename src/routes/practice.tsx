@@ -60,11 +60,11 @@ function PracticePage() {
         <BreakdownScreen selectedPhrase={selectedPhrase} setSelectedPhrase={setSelectedPhrase} playingPhrase={playingPhrase} setPlayingPhrase={setPlayingPhrase} onBack={() => go("source")} onContinue={() => go("shadow")} />
       )}
       {stage === "shadow" && (
-        <RecordScreen kind="shadow" recording={recording} seconds={seconds} playing={playing} setPlaying={setPlaying} onRecord={() => setRecording((value) => !value)} onBack={() => go("breakdown")} onAnalyze={() => go("shadowFeedback")} selectedPhrase={selectedPhrase} />
+        <RecordScreen kind="shadow" recording={recording} seconds={seconds} onRecord={() => setRecording((value) => !value)} onBack={() => go("breakdown")} onAnalyze={() => go("shadowFeedback")} selectedPhrase={selectedPhrase} />
       )}
       {stage === "shadowFeedback" && <FeedbackScreen kind="shadow" playing={playing} setPlaying={setPlaying} onRetry={() => go("shadow")} onContinue={() => go("improvise")} />}
       {stage === "improvise" && (
-        <RecordScreen kind="improvise" recording={recording} seconds={seconds} playing={playing} setPlaying={setPlaying} onRecord={() => setRecording((value) => !value)} onBack={() => go("shadowFeedback")} onAnalyze={() => go("improvFeedback")} />
+        <RecordScreen kind="improvise" recording={recording} seconds={seconds} onRecord={() => setRecording((value) => !value)} onBack={() => go("shadowFeedback")} onAnalyze={() => go("improvFeedback")} />
       )}
       {stage === "improvFeedback" && <FeedbackScreen kind="improvise" playing={playing} setPlaying={setPlaying} onRetry={() => go("improvise")} onContinue={() => go("complete")} />}
       {stage === "complete" && <CompleteScreen onAgain={() => go("source")} />}
