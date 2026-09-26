@@ -196,6 +196,10 @@ Supabase for an analysis (`request_analysis` RPC in
 runs `analyze_recording`, and writes the result back. The page then picks
 the result up over Realtime.
 
+YouTube downloads need a JavaScript runtime on PATH to pass YouTube's
+challenge: Node (already required for the web app), Deno or Bun. Without
+one, downloads fail with HTTP 403 now and then; the worker warns at startup.
+
 ```bash
 pip install -r requirements-worker.txt       # no ffmpeg install needed
 # SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY come from ../.env

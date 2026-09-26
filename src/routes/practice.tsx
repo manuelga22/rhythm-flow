@@ -6,10 +6,12 @@ import { CompleteScreen } from "@/components/cadence/CompleteScreen";
 import { FeedbackScreen } from "@/components/cadence/FeedbackScreen";
 import { Header } from "@/components/cadence/Header";
 import { RecordScreen } from "@/components/cadence/RecordScreen";
+import { ShadowReviewScreen } from "@/components/cadence/ShadowReviewScreen";
 import { SourceScreen } from "@/components/cadence/SourceScreen";
 import type { PracticePhrase, Stage } from "@/components/cadence/data";
 import { useAnalysis } from "@/hooks/use-analysis";
 import type { ClipSource } from "@/hooks/use-clip-player";
+import { useRecorder } from "@/hooks/use-recorder";
 import { youtubeId, type AnalysisSource } from "@/lib/analysis";
 
 export const Route = createFileRoute("/practice")({
@@ -37,6 +39,8 @@ function PracticePage() {
   const [playing, setPlaying] = useState<"reference" | "you" | null>(null);
   const [selectedPhrase, setSelectedPhrase] = useState<PracticePhrase | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  // Shadow takes come from the microphone; improvise still runs on the simulated timer.
+  const recorder = useRecorder();
   const { analysis, status: analysisStatus, error: analysisError, submitting, start: startAnalysis } = useAnalysis();
   const phrases = analysis?.view?.phrases ?? [];
   const clipTitle = analysis?.view?.title ?? analysis?.title ?? "Reference clip";
@@ -56,6 +60,9 @@ function PracticePage() {
   }, [recording]);
 
   const go = (next: Stage) => {
+    // Keep the shadow take while reviewing and retrying it; drop it anywhere else.
+    if (next === "shadow" || next === "shadowFeedback") recorder.stop();
+    else recorder.reset();
     setStage(next);
     setRecording(false);
     setPlaying(null);
@@ -79,9 +86,9 @@ function PracticePage() {
         <BreakdownScreen status={analysisStatus} error={analysisError} title={clipTitle} phrases={phrases} clipSource={clipSource} selectedPhrase={selectedPhrase} setSelectedPhrase={setSelectedPhrase} onBack={() => go("source")} onContinue={() => go("shadow")} />
       )}
       {stage === "shadow" && (
-        <RecordScreen kind="shadow" recording={recording} seconds={seconds} onRecord={() => setRecording((value) => !value)} onBack={() => go("breakdown")} onAnalyze={() => go("shadowFeedback")} phrases={phrases} selectedPhrase={selectedPhrase} />
+        <RecordScreen kind="shadow" recording={recorder.status === "recording"} seconds={recorder.elapsed} onRecord={() => (recorder.status === "recording" ? recorder.stop() : void recorder.start())} onBack={() => go("breakdown")} onAnalyze={() => go("shadowFeedback")} phrases={phrases} selectedPhrase={selectedPhrase} take={recorder.take} levels={recorder.levels} error={recorder.error} busy={recorder.status === "requesting"} />
       )}
-      {stage === "shadowFeedback" && <FeedbackScreen kind="shadow" playing={playing} setPlaying={setPlaying} onRetry={() => go("shadow")} onContinue={() => go("improvise")} />}
+      {stage === "shadowFeedback" && <ShadowReviewScreen take={recorder.take} onRetry={() => go("shadow")} onContinue={() => go("improvise")} />}
       {stage === "improvise" && (
         <RecordScreen kind="improvise" recording={recording} seconds={seconds} onRecord={() => setRecording((value) => !value)} onBack={() => go("shadowFeedback")} onAnalyze={() => go("improvFeedback")} />
       )}

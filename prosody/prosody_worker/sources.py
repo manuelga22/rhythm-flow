@@ -14,6 +14,7 @@ Two kinds of source exist, matching ``analyses.source_type``:
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,6 +22,17 @@ from urllib.parse import parse_qs, urlparse
 
 from prosody_coach.audio import AudioError, decode_to_wav
 from prosody_worker.config import MAX_SOURCE_SECONDS, MAX_UPLOAD_BYTES
+
+
+log = logging.getLogger(__name__)
+
+# YouTube signs stream URLs through a JavaScript challenge. yt-dlp only
+# enables Deno by default; Node is what this repo already requires for the
+# web app, so allow any of them. Without one, downloads 403 intermittently.
+JS_RUNTIMES = ("deno", "node", "bun")
+
+# Each attempt re-extracts, which gets freshly signed stream URLs.
+YOUTUBE_ATTEMPTS = 3
 
 
 class SourceError(RuntimeError):
@@ -88,21 +100,34 @@ def download_youtube_audio(video_id: str, dest: Path) -> ResolvedSource:
         "quiet": True,
         "no_warnings": True,
         "noprogress": True,
+        "js_runtimes": {name: {} for name in JS_RUNTIMES},
+        # Error text ends up in the row and the UI; keep ANSI codes out of it.
+        "color": {"stdout": "no_color", "stderr": "no_color"},
     }
 
-    try:
-        with YoutubeDL(options) as ydl:
-            info = ydl.extract_info(url, download=False)
-            duration = info.get("duration") or 0
-            if duration > MAX_SOURCE_SECONDS:
+    for attempt in range(1, YOUTUBE_ATTEMPTS + 1):
+        try:
+            with YoutubeDL(options) as ydl:
+                info = ydl.extract_info(url, download=False)
+                duration = info.get("duration") or 0
+                if duration > MAX_SOURCE_SECONDS:
+                    raise SourceError(
+                        f"Video is {duration // 60} min long; clips must be under "
+                        f"{MAX_SOURCE_SECONDS // 60} min."
+                    )
+                # Reuse the metadata already fetched instead of resolving the URL again.
+                info = ydl.process_ie_result(info, download=True)
+            break
+        except DownloadError as exc:
+            if "HTTP Error 403" not in str(exc):
+                raise SourceError(f"Could not download the YouTube audio: {exc}") from exc
+            if attempt == YOUTUBE_ATTEMPTS:
                 raise SourceError(
-                    f"Video is {duration // 60} min long; clips must be under "
-                    f"{MAX_SOURCE_SECONDS // 60} min."
-                )
-            # Reuse the metadata already fetched instead of resolving the URL again.
-            info = ydl.process_ie_result(info, download=True)
-    except DownloadError as exc:
-        raise SourceError(f"Could not download the YouTube audio: {exc}") from exc
+                    "YouTube refused the download (HTTP 403). Try again in a minute."
+                ) from exc
+            log.warning("YouTube 403 for %s (attempt %d/%d), retrying", video_id, attempt, YOUTUBE_ATTEMPTS)
+            for partial in dest.glob("download.*"):
+                partial.unlink(missing_ok=True)
 
     downloads = info.get("requested_downloads") or []
     downloaded = Path(downloads[0]["filepath"]) if downloads else None

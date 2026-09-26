@@ -13,10 +13,12 @@ from __future__ import annotations
 
 import argparse
 import logging
+import shutil
 import time
 
 from prosody_worker.config import ANALYZER_VERSION, WorkerConfig
 from prosody_worker.jobs import process
+from prosody_worker.sources import JS_RUNTIMES
 from prosody_worker.store import AnalysisStore, SupabaseStore
 
 log = logging.getLogger("prosody_worker")
@@ -46,6 +48,12 @@ def main(argv: list[str] | None = None) -> int:
     config = WorkerConfig.from_env()
     store = SupabaseStore(config)
     log.info("worker started (analyzer %s)", ANALYZER_VERSION)
+    if not any(shutil.which(name) for name in JS_RUNTIMES):
+        log.warning(
+            "no JavaScript runtime (%s) on PATH; YouTube downloads may fail with "
+            "HTTP 403 until Node is installed",
+            "/".join(JS_RUNTIMES),
+        )
 
     try:
         while True:

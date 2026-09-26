@@ -13,6 +13,8 @@ import json
 import math
 import sys
 import tempfile
+import types
+from contextlib import contextmanager
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -24,7 +26,13 @@ from prosody_coach.transcribe import TimedWord, TranscriptionError
 from prosody_worker.importer import import_analysis, load_recording
 from prosody_worker.jobs import process
 from prosody_worker.serialize import to_practice_view
-from prosody_worker.sources import ResolvedSource, SourceError, parse_youtube_id, sha256_hex
+from prosody_worker.sources import (
+    ResolvedSource,
+    SourceError,
+    download_youtube_audio,
+    parse_youtube_id,
+    sha256_hex,
+)
 
 from tests import synth
 
@@ -372,6 +380,104 @@ def test_unexpected_error_marks_failed_and_reraises():
     else:
         raise AssertionError("expected the ValueError to propagate")
     assert "Unexpected" in store.failed["yt"]
+
+
+# --------------------------------------------------------------------------
+# YouTube download retries (yt-dlp faked in sys.modules)
+# --------------------------------------------------------------------------
+
+
+class _FakeDownloadError(Exception):
+    pass
+
+
+@contextmanager
+def _fake_yt_dlp(failures: list[str]):
+    """Install a fake yt_dlp whose downloads raise ``failures`` in order,
+    then succeed by writing a WAV. Yields the list of options each attempt saw."""
+    attempts: list[dict] = []
+    ref_path, _ = _reference_wav()
+
+    class FakeYoutubeDL:
+        def __init__(self, options):
+            self.options = options
+            attempts.append(options)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def extract_info(self, url, download=False):
+            return {"title": "Fake video", "duration": 5}
+
+        def process_ie_result(self, info, download=True):
+            out = Path(self.options["outtmpl"].replace("%(ext)s", "wav"))
+            out.write_bytes(b"partial")
+            if failures:
+                raise _FakeDownloadError(failures.pop(0))
+            out.write_bytes(ref_path.read_bytes())
+            return {**info, "requested_downloads": [{"filepath": str(out)}]}
+
+    yt_dlp = types.ModuleType("yt_dlp")
+    yt_dlp.YoutubeDL = FakeYoutubeDL
+    utils = types.ModuleType("yt_dlp.utils")
+    utils.DownloadError = _FakeDownloadError
+    saved = {name: sys.modules.get(name) for name in ("yt_dlp", "yt_dlp.utils")}
+    sys.modules["yt_dlp"], sys.modules["yt_dlp.utils"] = yt_dlp, utils
+    try:
+        yield attempts
+    finally:
+        for name, module in saved.items():
+            if module is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = module
+
+
+_FORBIDDEN = "ERROR: unable to download video data: HTTP Error 403: Forbidden"
+
+
+def test_youtube_403_is_retried_until_it_succeeds():
+    dest = Path(tempfile.mkdtemp(dir=_TMP))
+    with _fake_yt_dlp([_FORBIDDEN, _FORBIDDEN]) as attempts:
+        source = download_youtube_audio("dQw4w9WgXcQ", dest)
+
+    assert len(attempts) == 3
+    assert source.title == "Fake video"
+    assert load_audio(source.path).duration > 0
+    # yt-dlp must be allowed to use Node, not only its default Deno.
+    assert "node" in attempts[0]["js_runtimes"]
+    assert attempts[0]["color"] == {"stdout": "no_color", "stderr": "no_color"}
+
+
+def test_youtube_403_gives_up_with_a_readable_message():
+    dest = Path(tempfile.mkdtemp(dir=_TMP))
+    with _fake_yt_dlp([_FORBIDDEN] * 3) as attempts:
+        try:
+            download_youtube_audio("dQw4w9WgXcQ", dest)
+        except SourceError as exc:
+            message = str(exc)
+        else:
+            raise AssertionError("expected a SourceError")
+
+    assert len(attempts) == 3
+    assert "HTTP 403" in message
+    assert "\x1b" not in message
+
+
+def test_youtube_other_download_errors_are_not_retried():
+    dest = Path(tempfile.mkdtemp(dir=_TMP))
+    with _fake_yt_dlp(["ERROR: Video unavailable"]) as attempts:
+        try:
+            download_youtube_audio("dQw4w9WgXcQ", dest)
+        except SourceError as exc:
+            assert "Video unavailable" in str(exc)
+        else:
+            raise AssertionError("expected a SourceError")
+
+    assert len(attempts) == 1
 
 
 # --------------------------------------------------------------------------

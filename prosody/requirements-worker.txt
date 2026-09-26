@@ -8,4 +8,7 @@ supabase>=2.10.0
 python-dotenv>=1.0.0
 
 # YouTube audio download. The audio is converted to WAV with PyAV, not ffmpeg.
-yt-dlp>=2025.1.1
+# The [default] extra installs yt-dlp-ejs, the scripts that solve YouTube's
+# JavaScript challenge. They run on Node (already needed for the web app),
+# Deno or Bun; without a runtime, downloads fail with HTTP 403 now and then.
+yt-dlp[default]>=2026.8.19
