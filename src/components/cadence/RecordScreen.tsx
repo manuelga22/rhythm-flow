@@ -7,12 +7,29 @@ import { BackButton, SeekBar, Waveform } from "./primitives";
 
 export type TakeAudio = { url: string; duration: number; peaks: number[] };
 
+type RecordPanelProps = { kind: "shadow" | "improvise"; recording: boolean; seconds: number; onRecord: () => void; onAnalyze: () => void; phrases?: PracticePhrase[]; selectedPhrase?: PracticePhrase | null; take?: TakeAudio | null; levels?: number[]; error?: string | null; busy?: boolean };
+
+export function RecordScreen({ onBack, ...panel }: RecordPanelProps & { onBack: () => void }) {
+  return (
+    <main className="device-column px-5 pb-28 pt-5">
+      <BackButton onClick={onBack} />
+      <RecordPanel {...panel} />
+      {panel.kind !== "shadow" && (
+        <div className="mt-5 min-h-32 rounded-xl border border-dashed border-ink/20 p-5 text-center">
+          <p className="font-display text-2xl">NO SCRIPT THIS TIME.</p><p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">Explain the same idea in your own words. Keep the relaxed rhythm and let small words stay small.</p>
+        </div>
+      )}
+    </main>
+  );
+}
+
 /**
- * Pass `take` (even as null) to record from the microphone: `levels` drive the
- * live waveform and the take plays back for real. Without it the screen runs
- * on the simulated timer the improvise step still uses.
+ * The recording card. Pass `take` (even as null) to record from the
+ * microphone: `levels` drive the live waveform and the take plays back for
+ * real. Without it the card runs on the simulated timer the improvise step
+ * still uses.
  */
-export function RecordScreen({ kind, recording, seconds, onRecord, onBack, onAnalyze, phrases = [], selectedPhrase, take, levels, error, busy }: { kind: "shadow" | "improvise"; recording: boolean; seconds: number; onRecord: () => void; onBack: () => void; onAnalyze: () => void; phrases?: PracticePhrase[]; selectedPhrase?: PracticePhrase | null; take?: TakeAudio | null; levels?: number[]; error?: string | null; busy?: boolean }) {
+export function RecordPanel({ kind, recording, seconds, onRecord, onAnalyze, phrases = [], selectedPhrase, take, levels, error, busy }: RecordPanelProps) {
   const isShadow = kind === "shadow";
   const live = take !== undefined;
   const hasTake = live ? Boolean(take) : seconds > 0;
@@ -57,8 +74,6 @@ export function RecordScreen({ kind, recording, seconds, onRecord, onBack, onAna
   const liveBars = recording ? levels : take?.peaks;
   const bars = live ? (liveBars ?? waveA.map(() => 7)) : hasTake || recording ? waveA : waveA.map(() => 7);
   return (
-    <main className="device-column px-5 pb-28 pt-5">
-      <BackButton onClick={onBack} />
       <section className="animate-rise mt-5 rounded-3xl bg-ink p-5 text-background">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5"><span className={`size-2.5 rounded-full ${recording ? "animate-record bg-primary" : "bg-background/30"}`} /><span className={`font-mono text-xs uppercase tracking-widest ${recording ? "text-primary" : "text-background/50"}`}>{recording ? "Recording" : hasTake ? "Take ready" : "Ready"}</span></div>
@@ -102,11 +117,5 @@ export function RecordScreen({ kind, recording, seconds, onRecord, onBack, onAna
           </div>
         )}
       </section>
-      {!isShadow && (
-        <div className="mt-5 min-h-32 rounded-xl border border-dashed border-ink/20 p-5 text-center">
-          <p className="font-display text-2xl">NO SCRIPT THIS TIME.</p><p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">Explain the same idea in your own words. Keep the relaxed rhythm and let small words stay small.</p>
-        </div>
-      )}
-    </main>
   );
 }

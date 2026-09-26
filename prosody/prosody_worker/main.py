@@ -1,9 +1,18 @@
-"""Polling loop: claim pending analyses and process them one at a time.
+"""Polling loops: claim pending jobs and process them one at a time.
+
+Two queues run side by side, each on its own thread with its own Supabase
+client:
+
+* ``analyses`` (main thread): reference clips. These can take minutes for
+  a long YouTube video.
+* ``attempts`` (dedicated thread): a learner's take compared against an
+  analysed reference. A user is waiting on these, so they never queue
+  behind a reference analysis.
 
 Usage:
 
     SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... python -m prosody_worker
-    python -m prosody_worker --once      # drain the queue, then exit
+    python -m prosody_worker --once      # drain both queues, then exit
 
 TODO: replace polling with a Supabase Database Webhook on INSERT (or pgmq)
 that wakes the worker, keeping the poll as a slow safety net.
@@ -14,18 +23,20 @@ from __future__ import annotations
 import argparse
 import logging
 import shutil
-import time
+import threading
+from typing import Any, Callable
 
+from prosody_worker.attempts import process_attempt
 from prosody_worker.config import ANALYZER_VERSION, WorkerConfig
 from prosody_worker.jobs import process
 from prosody_worker.sources import JS_RUNTIMES
-from prosody_worker.store import AnalysisStore, SupabaseStore
+from prosody_worker.store import AnalysisStore, AttemptStore, SupabaseStore
 
 log = logging.getLogger("prosody_worker")
 
 
 def run_once(store: AnalysisStore, batch_size: int = 1) -> int:
-    """Process whatever is pending right now. Returns the number handled."""
+    """Process whatever analyses are pending right now. Returns the number handled."""
     handled = 0
     for row in store.fetch_pending(ANALYZER_VERSION, batch_size):
         if not store.claim(row):
@@ -39,14 +50,51 @@ def run_once(store: AnalysisStore, batch_size: int = 1) -> int:
     return handled
 
 
+def run_attempts_once(store: AttemptStore, batch_size: int = 1) -> int:
+    """Process whatever attempts are pending right now. Returns the number handled."""
+    handled = 0
+    for row in store.fetch_pending_attempts(ANALYZER_VERSION, batch_size):
+        if not store.claim_attempt(row):
+            continue
+        log.info("claimed attempt %s (analysis %s, phrase %s)", row["id"], row["analysis_id"], row.get("phrase_id") or "all")
+        try:
+            process_attempt(row, store)
+        except Exception:
+            log.exception("attempt %s crashed", row["id"])
+        handled += 1
+    return handled
+
+
+def poll(
+    run: Callable[[Any, int], int],
+    store: Any,
+    stop: threading.Event,
+    poll_seconds: float,
+    batch_size: int = 1,
+    once: bool = False,
+) -> None:
+    """Call ``run`` until ``stop`` is set, or until the queue is empty when ``once``."""
+    while not stop.is_set():
+        try:
+            handled = run(store, batch_size)
+        except Exception:
+            # A dropped connection must not kill the loop for good.
+            log.exception("polling failed")
+            handled = 0
+        if handled == 0:
+            if once:
+                return
+            stop.wait(poll_seconds)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="prosody_worker")
-    parser.add_argument("--once", action="store_true", help="Drain the queue and exit.")
+    parser.add_argument("--once", action="store_true", help="Drain both queues and exit.")
     args = parser.parse_args(argv)
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s [%(threadName)s] %(message)s")
+    threading.current_thread().name = "analyses"
     config = WorkerConfig.from_env()
-    store = SupabaseStore(config)
     log.info("worker started (analyzer %s)", ANALYZER_VERSION)
     if not any(shutil.which(name) for name in JS_RUNTIMES):
         log.warning(
@@ -55,13 +103,25 @@ def main(argv: list[str] | None = None) -> int:
             "/".join(JS_RUNTIMES),
         )
 
+    stop = threading.Event()
+    # Each thread gets its own client: supabase-py's HTTP client is not
+    # meant to be shared across threads.
+    attempts = threading.Thread(
+        target=poll,
+        name="attempts",
+        args=(run_attempts_once, SupabaseStore(config), stop, config.poll_seconds, config.batch_size, args.once),
+        daemon=True,
+    )
+    attempts.start()
+
     try:
-        while True:
-            handled = run_once(store, config.batch_size)
-            if args.once and handled == 0:
-                return 0
-            if handled == 0:
-                time.sleep(config.poll_seconds)
+        poll(run_once, SupabaseStore(config), stop, config.poll_seconds, config.batch_size, args.once)
+        if args.once:
+            attempts.join()
+            return 0
     except KeyboardInterrupt:
-        log.info("worker stopped")
+        log.info("worker stopping")
+        stop.set()
+        attempts.join(timeout=5)
         return 130
+    return 0

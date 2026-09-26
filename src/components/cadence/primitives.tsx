@@ -27,7 +27,8 @@ export function DataRow({ label, value }: { label: string; value: string }) { re
  * Playback progress. With `onSeek` it becomes a slider: click or drag
  * anywhere on the track to jump, or use the arrow keys (Shift for 5s steps).
  */
-export function SeekBar({ value, max, label, onSeek }: { value: number; max: number; label: string; onSeek?: ((seconds: number) => void) | undefined }) {
+export function SeekBar({ value, max, label, onSeek, tone = "dark" }: { value: number; max: number; label: string; onSeek?: ((seconds: number) => void) | undefined; tone?: "dark" | "light" }) {
+  const track = tone === "dark" ? "bg-background/15" : "bg-ink/10";
   const [dragging, setDragging] = useState(false);
   const percent = max ? Math.min(100, Math.max(0, (value / max) * 100)) : 0;
   const clamp = (seconds: number) => Math.min(max, Math.max(0, seconds));
@@ -37,7 +38,7 @@ export function SeekBar({ value, max, label, onSeek }: { value: number; max: num
   };
   const fill = <div className={`h-full bg-primary ${dragging ? "" : "transition-[width] duration-200"}`} style={{ width: `${percent}%` }} />;
   if (!onSeek) {
-    return <div role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={Math.ceil(max)} aria-valuenow={Math.floor(value)} className="mt-2 h-1.5 overflow-hidden rounded-full bg-background/15">{fill}</div>;
+    return <div role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={Math.ceil(max)} aria-valuenow={Math.floor(value)} className={`mt-2 h-1.5 overflow-hidden rounded-full ${track}`}>{fill}</div>;
   }
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const step = event.shiftKey ? 5 : 1;
@@ -62,9 +63,9 @@ export function SeekBar({ value, max, label, onSeek }: { value: number; max: num
       onPointerCancel={() => setDragging(false)}
       className="group mt-1 cursor-pointer touch-none rounded-full py-1 outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
     >
-      <div className="relative h-1.5 rounded-full bg-background/15">
+      <div className={`relative h-1.5 rounded-full ${track}`}>
         <div className="h-full overflow-hidden rounded-full">{fill}</div>
-        <span className={`absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-background shadow transition-opacity ${dragging ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"}`} style={{ left: `${percent}%` }} />
+        <span className={`absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full ${tone === "dark" ? "bg-background" : "bg-ink"} shadow transition-opacity ${dragging ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"}`} style={{ left: `${percent}%` }} />
       </div>
     </div>
   );

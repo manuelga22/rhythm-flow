@@ -18,6 +18,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
+import threading
 from functools import lru_cache
 from pathlib import Path
 
@@ -47,8 +48,19 @@ class Transcript:
     words: list[TimedWord]
 
 
-@lru_cache(maxsize=2)
+# The worker transcribes on two threads. lru_cache does not stop both from
+# loading the same model at once on first use, so loads are serialised.
+# A loaded model is safe to share: CTranslate2 handles concurrent calls.
+_LOAD_LOCK = threading.Lock()
+
+
 def _load_model(model_size: str, compute_type: str):
+    with _LOAD_LOCK:
+        return _load_model_cached(model_size, compute_type)
+
+
+@lru_cache(maxsize=2)
+def _load_model_cached(model_size: str, compute_type: str):
     """Load and cache a Whisper model.
 
     Cached because a CLI run transcribes two files and reloading the model

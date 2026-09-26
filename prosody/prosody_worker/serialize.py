@@ -1,4 +1,4 @@
-"""Convert an analysed Recording into the view model the Practice UI renders.
+"""Convert analysis results into the view models the Practice UI renders.
 
 The shape matches ``PracticePhrase`` in ``src/components/cadence/data.ts``:
 
@@ -15,7 +15,7 @@ import math
 import re
 from typing import Any
 
-from prosody_coach.models import PitchMovement, Prominence, Recording, Word
+from prosody_coach.models import Comparison, IssueType, PitchMovement, Prominence, Recording, Word
 
 # Pauses shorter than this are ordinary articulation gaps, not phrasing.
 MIN_PAUSE_SECONDS = 0.05
@@ -47,6 +47,67 @@ def to_practice_view(recording: Recording, title: str | None = None) -> dict[str
         "duration": round(recording.duration, 1),
         "transcript": recording.transcript.strip(),
         "phrases": phrases,
+    }
+
+
+def to_comparison_view(comparison: Comparison) -> dict[str, Any]:
+    """The Feedback tab's view of one attempt.
+
+    Word flags follow ``render_comparison_line`` in prosody_coach.render, so
+    the app and the CLI colour the same words the same way.
+    """
+    flagged = {
+        issue_type: {issue.detail.get("word") for issue in comparison.issues if issue.type is issue_type}
+        for issue_type in (IssueType.EXCESSIVE_PROMINENCE, IssueType.MISSING_PROMINENCE)
+    }
+
+    words: list[dict[str, Any]] = []
+    for pair in comparison.pairs:
+        if pair.user is None:
+            if pair.reference is not None:
+                words.append({"text": _token(pair.reference), "flag": "missing_word"})
+            continue
+        word = pair.user
+        if word.normalized in flagged[IssueType.EXCESSIVE_PROMINENCE]:
+            flag = "extra_stress"
+        elif word.normalized in flagged[IssueType.MISSING_PROMINENCE]:
+            flag = "missing_stress"
+        elif word.prominence is Prominence.ANCHOR:
+            matched = pair.reference is not None and pair.reference.prominence is Prominence.ANCHOR
+            flag = "hit_beat" if matched else "stressed"
+        elif word.prominence is Prominence.BRIDGE:
+            flag = "reduced"
+        else:
+            flag = None
+        entry: dict[str, Any] = {"text": _token(word), "flag": flag}
+        if word.pause_after >= MIN_PAUSE_SECONDS:
+            entry["pauseAfter"] = round(word.pause_after, 2)
+        words.append(entry)
+
+    reference_beats = [pair for pair in comparison.pairs if pair.reference and pair.reference.prominence is Prominence.ANCHOR]
+    matched_beats = [pair for pair in reference_beats if pair.user and pair.user.prominence is Prominence.ANCHOR]
+    feedback = comparison.feedback
+
+    return {
+        "reference": _structure(comparison.reference.words),
+        "words": words,
+        "beats": {"matched": len(matched_beats), "total": len(reference_beats)},
+        "pace": {
+            # >1 means the user spoke more slowly than the reference.
+            "rateRatio": round(comparison.rate_ratio, 3),
+            "userWps": _finite(round(comparison.user.articulation_rate_wps, 2)),
+            "referenceWps": _finite(round(comparison.reference.articulation_rate_wps, 2)),
+        },
+        "feedback": {
+            "positive": feedback.positive,
+            "primary": feedback.primary_issue,
+            "secondary": feedback.secondary_issue,
+            "next": feedback.next_attempt,
+        },
+        "categories": [
+            {"name": category.name, "verdict": category.verdict, "comment": category.comment}
+            for category in feedback.categories
+        ],
     }
 
 

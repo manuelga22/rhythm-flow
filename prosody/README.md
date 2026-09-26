@@ -204,8 +204,17 @@ one, downloads fail with HTTP 403 now and then; the worker warns at startup.
 pip install -r requirements-worker.txt       # no ffmpeg install needed
 # SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY come from ../.env
 python -m prosody_worker                      # poll forever
-python -m prosody_worker --once               # drain the queue and exit
+python -m prosody_worker --once               # drain both queues and exit
 ```
+
+**Attempts.** When a learner submits a shadowing take, the browser uploads
+it to the `attempt-audio` bucket (webm/ogg/mp4/wav, as the browser recorded
+it) and calls `request_attempt`. The worker analyses the take, compares it
+with the stored reference `Recording` (cut down to the practised phrase, if
+any) using `build_comparison`, and writes a view model to `attempts.result`.
+Attempts run on their own thread with their own Supabase client, so a
+learner waiting on feedback never queues behind a long reference analysis.
+Log lines are tagged `[analyses]` or `[attempts]`.
 
 Analyses are cached per source (`youtube:<id>` or `upload:<sha256>`),
 Whisper model and `ANALYZER_VERSION`. Bump the version in both

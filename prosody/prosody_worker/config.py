@@ -30,10 +30,12 @@ ANALYZER_VERSION = os.environ.get("PROSODY_ANALYZER_VERSION", "1")
 DEFAULT_MODEL_SIZE = "small"
 
 AUDIO_BUCKET = "reference-audio"
+ATTEMPT_BUCKET = "attempt-audio"
 
 # Guard rails for what a single job may pull down and analyse.
 MAX_SOURCE_SECONDS = 10 * 60
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+MAX_ATTEMPT_BYTES = 10 * 1024 * 1024
 
 # A claimed row that has not finished within this window is assumed to
 # belong to a crashed worker and becomes claimable again.
