@@ -3,8 +3,9 @@
 Two kinds of source exist, matching ``analyses.source_type``:
 
     youtube   source_key = "youtube:<11-char video id>". The audio is pulled
-              with yt-dlp. The URL is rebuilt from the id rather than using
-              the pasted ``source_url``, so only YouTube is ever fetched.
+              with yt-dlp and decoded to WAV with PyAV. The URL is rebuilt
+              from the id rather than using the pasted ``source_url``, so
+              only YouTube is ever fetched.
     upload    source_key = "upload:<sha256>". The WAV was uploaded by the
               browser to Storage; its bytes are re-hashed here so a client
               cannot attach the wrong audio to someone else's cache key.
@@ -18,6 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from prosody_coach.audio import AudioError, decode_to_wav
 from prosody_worker.config import MAX_SOURCE_SECONDS, MAX_UPLOAD_BYTES
 
 
@@ -76,13 +78,16 @@ def download_youtube_audio(video_id: str, dest: Path) -> ResolvedSource:
         raise SourceError("yt-dlp is not installed; pip install -r requirements-worker.txt") from exc
 
     url = f"https://www.youtube.com/watch?v={video_id}"
+    # No yt-dlp postprocessors: those shell out to the ffmpeg and ffprobe
+    # executables. A single audio-only stream needs no merging, and PyAV
+    # decodes it to WAV below.
     options = {
-        "format": "bestaudio/best",
-        "outtmpl": str(dest / "source.%(ext)s"),
+        "format": "bestaudio[ext=m4a]/bestaudio/best",
+        "outtmpl": str(dest / "download.%(ext)s"),
         "noplaylist": True,
         "quiet": True,
         "no_warnings": True,
-        "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "wav"}],
+        "noprogress": True,
     }
 
     try:
@@ -94,13 +99,20 @@ def download_youtube_audio(video_id: str, dest: Path) -> ResolvedSource:
                     f"Video is {duration // 60} min long; clips must be under "
                     f"{MAX_SOURCE_SECONDS // 60} min."
                 )
-            ydl.download([url])
+            # Reuse the metadata already fetched instead of resolving the URL again.
+            info = ydl.process_ie_result(info, download=True)
     except DownloadError as exc:
         raise SourceError(f"Could not download the YouTube audio: {exc}") from exc
 
-    path = dest / "source.wav"
-    if not path.exists():
-        raise SourceError("YouTube download produced no WAV; is ffmpeg installed?")
+    downloads = info.get("requested_downloads") or []
+    downloaded = Path(downloads[0]["filepath"]) if downloads else None
+    if downloaded is None or not downloaded.exists():
+        raise SourceError("YouTube download produced no audio file.")
+
+    try:
+        path = decode_to_wav(downloaded, dest / "source.wav")
+    except AudioError as exc:
+        raise SourceError(f"Could not decode the YouTube audio: {exc}") from exc
     return ResolvedSource(path=path, title=info.get("title"))
 
 

@@ -7,6 +7,11 @@ numpy>=1.24,<3
 # downloaded on first run and cached under ~/.cache/huggingface.
 faster-whisper>=1.0.0
 
+# Decodes non-WAV audio (m4a, webm, mp3, ...) in-process. Its wheels bundle
+# FFmpeg's libraries, so no ffmpeg/ffprobe executable is needed. Already a
+# faster-whisper dependency; listed because prosody_coach imports it directly.
+av>=12
+
 # Optional: only needed for `--llm` feedback wording.
 # Everything works offline without it.
 anthropic>=0.40.0

@@ -106,6 +106,47 @@ def test_resampling_preserves_duration():
     assert abs(len(out) - 8000) <= 1
 
 
+def _write_compressed_tone(path: Path, codec: str, hz: float = 200.0, seconds: float = 1.0) -> None:
+    """Encode a stereo 44.1 kHz tone with PyAV, standing in for a YouTube download."""
+    import av
+
+    rate = 44100
+    t = np.arange(int(rate * seconds)) / rate
+    tone = (0.5 * np.sin(2 * np.pi * hz * t)).astype(np.float32)
+    with av.open(str(path), mode="w") as container:
+        stream = container.add_stream(codec, rate=rate, layout="stereo")
+        # Planar float, one row per channel, fed in 1024-sample frames.
+        planar = np.stack([tone, tone])
+        for start in range(0, planar.shape[1], 1024):
+            frame = av.AudioFrame.from_ndarray(
+                np.ascontiguousarray(planar[:, start:start + 1024]), format="fltp", layout="stereo"
+            )
+            frame.sample_rate = rate
+            for packet in stream.encode(frame):
+                container.mux(packet)
+        for packet in stream.encode(None):
+            container.mux(packet)
+
+
+def test_compressed_audio_is_decoded_without_ffmpeg():
+    """m4a/AAC (YouTube's usual audio) decodes in-process to 16 kHz mono."""
+    from prosody_coach.audio import decode_to_wav
+
+    source = _TMP / "tone.m4a"
+    _write_compressed_tone(source, "aac")
+
+    signal = load_audio(source)
+    assert signal.sample_rate == 16000
+    assert signal.samples.ndim == 1
+    # AAC adds encoder padding, so allow a little slack on duration.
+    assert abs(signal.duration - 1.0) < 0.1
+    assert float(np.max(np.abs(signal.samples))) > 0.3
+
+    wav = decode_to_wav(source, _TMP / "tone_decoded.wav")
+    track = extract_features(load_audio(wav))
+    assert abs(float(np.median(track.voiced_f0)) - 200.0) < 5.0
+
+
 # --------------------------------------------------------------------------
 # Analysis layer
 # --------------------------------------------------------------------------

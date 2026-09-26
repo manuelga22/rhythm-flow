@@ -110,8 +110,9 @@ Useful flags: `--ascii` for consoles that cannot render box-drawing
 characters, `--no-color` to drop ANSI codes, `--language` for a non-English
 reference.
 
-Audio input can be any format ffmpeg reads. Plain PCM WAV needs no ffmpeg
-at all.
+Audio input can be any common format (WAV, MP3, M4A, WebM, FLAC, ...).
+Non-WAV files are decoded with PyAV, which bundles FFmpeg's libraries, so no
+ffmpeg executable needs to be installed.
 
 ---
 
@@ -191,12 +192,12 @@ The Practice page does not call this package directly. The browser asks
 Supabase for an analysis (`request_analysis` RPC in
 `../supabase/migrations`), which either returns a stored one or queues a
 `processing` row. `prosody_worker` claims queued rows, fetches the audio
-(yt-dlp for YouTube, the `reference-audio` Storage bucket for uploads),
+(yt-dlp for YouTube, decoded to WAV with PyAV; the `reference-audio` Storage bucket for uploads),
 runs `analyze_recording`, and writes the result back. The page then picks
 the result up over Realtime.
 
 ```bash
-pip install -r requirements-worker.txt       # also needs ffmpeg for YouTube
+pip install -r requirements-worker.txt       # no ffmpeg install needed
 # SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY come from ../.env
 python -m prosody_worker                      # poll forever
 python -m prosody_worker --once               # drain the queue and exit

@@ -14,16 +14,14 @@ word, and was the peak here or there" rather than "what is the exact Hz".
 This modules takes an audio file and hands back an AudioSignal guaranteed to be
 mono, 16kHz and have normalized values (-1.0 to 1.0) in every frame.
 
-This module is designed to read .WAV files, it will try to read other formats
-using ffmpeg but this tool isn't guaranteed to be there.
+Plain PCM .WAV files are read with the standard library. Other formats are
+decoded in-process with PyAV, whose wheel bundles FFmpeg's libraries, so no
+ffmpeg or ffprobe executable is needed on the machine.
 """
 
 from __future__ import annotations
 
 import math
-import shutil
-import subprocess
-import tempfile
 import wave
 from dataclasses import dataclass
 from pathlib import Path
@@ -99,9 +97,9 @@ class FeatureTrack:
 def load_audio(path: str | Path, target_rate: int = TARGET_RATE) -> AudioSignal:
     """Load any audio file as mono float32 at ``target_rate``.
 
-    Plain PCM WAV is read with the standard library. Anything else is routed
-    through ffmpeg, which is also what the transcription stack requires, so
-    this adds no new install burden.
+    Plain PCM WAV is read with the standard library. Anything else is decoded
+    with PyAV, which faster-whisper already depends on, so this adds no new
+    install burden.
     """
     path = Path(path)
     if not path.exists():
@@ -111,12 +109,24 @@ def load_audio(path: str | Path, target_rate: int = TARGET_RATE) -> AudioSignal:
         try:
             return _load_wav(path, target_rate)
         except (wave.Error, AudioError):
-            # Fall through to ffmpeg: the extension may lie, or the file may
+            # Fall through to PyAV: the extension may lie, or the file may
             # use a compressed WAV codec the wave module cannot read.
             pass
-    # if people enter other files not in .wav format, we will try to lead them using
-    # ffmpeg
-    return _load_via_ffmpeg(path, target_rate)
+    # Anything that is not plain PCM WAV (m4a, webm, mp3, ...) is decoded by PyAV.
+    return _load_via_av(path, target_rate)
+
+
+def decode_to_wav(src: str | Path, dest: str | Path, target_rate: int = TARGET_RATE) -> Path:
+    """Decode any audio file to 16-bit PCM mono WAV at ``target_rate``."""
+    signal = load_audio(src, target_rate)
+    pcm = (np.clip(signal.samples, -1.0, 1.0) * 32767.0).astype("<i2")
+    dest = Path(dest)
+    with wave.open(str(dest), "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(target_rate)
+        handle.writeframes(pcm.tobytes())
+    return dest
 
 
 def _load_wav(path: Path, target_rate: int) -> AudioSignal:
@@ -148,31 +158,35 @@ def _load_wav(path: Path, target_rate: int) -> AudioSignal:
     return AudioSignal(samples=data.astype(np.float32), sample_rate=target_rate, path=str(path))
 
 
-def _load_via_ffmpeg(path: Path, target_rate: int) -> AudioSignal:
-    if shutil.which("ffmpeg") is None:
+def _load_via_av(path: Path, target_rate: int) -> AudioSignal:
+    try:
+        import av
+    except ImportError as exc:
         raise AudioError(
-            f"Cannot read {path.name}: it is not plain PCM WAV and ffmpeg is not on PATH.\n"
-            "Install ffmpeg, or convert the file to 16-bit PCM WAV first."
-        )
+            f"Cannot read {path.name}: it is not plain PCM WAV and PyAV is not installed.\n"
+            "Run pip install -r requirements.txt, or convert the file to 16-bit PCM WAV first."
+        ) from exc
 
-    with tempfile.TemporaryDirectory() as tmp:
-        out = Path(tmp) / "decoded.wav"
-        result = subprocess.run(
-            [
-                "ffmpeg", "-nostdin", "-loglevel", "error", "-y",
-                "-i", str(path),
-                "-ac", "1", "-ar", str(target_rate),
-                "-acodec", "pcm_s16le",
-                str(out),
-            ],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0 or not out.exists():
-            raise AudioError(f"ffmpeg failed to decode {path.name}: {result.stderr.strip()}")
-        signal = _load_wav(out, target_rate)
+    # The resampler does format conversion, downmixing and rate conversion in
+    # one step, the same way faster-whisper decodes audio for transcription.
+    resampler = av.audio.resampler.AudioResampler(format="s16", layout="mono", rate=target_rate)
+    chunks: list[np.ndarray] = []
+    try:
+        with av.open(str(path), mode="r", metadata_errors="ignore") as container:
+            if not container.streams.audio:
+                raise AudioError(f"{path.name} has no audio track.")
+            for frame in container.decode(audio=0):
+                for out in resampler.resample(frame):
+                    chunks.append(out.to_ndarray().reshape(-1))
+            # Passing None drains the samples the resampler is still holding.
+            for out in resampler.resample(None):
+                chunks.append(out.to_ndarray().reshape(-1))
+    except av.error.FFmpegError as exc:
+        raise AudioError(f"Could not decode {path.name}: {exc}") from exc
 
-    return AudioSignal(samples=signal.samples, sample_rate=target_rate, path=str(path))
+    pcm = np.concatenate(chunks) if chunks else np.zeros(0, dtype=np.int16)
+    samples = pcm.astype(np.float32) / 32768.0
+    return AudioSignal(samples=samples, sample_rate=target_rate, path=str(path))
 
 
 def _resample(data: np.ndarray, source_rate: int, target_rate: int) -> np.ndarray:
