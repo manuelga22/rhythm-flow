@@ -238,6 +238,40 @@ Copy `../.env.example` to `../.env` and fill it in from Settings > API.
 The worker and importer load `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY`
 from that file (via python-dotenv); variables set in the shell win.
 
+### Hosted worker (Modal)
+
+`modal_app.py` runs the worker on [Modal](https://modal.com) without a
+machine that polls forever. When an analysis or attempt is queued, a
+database trigger (`../supabase/migrations/*_worker_webhook.sql`) POSTs to
+the `wake` endpoint. That endpoint spawns a function that drains the queue
+and exits. A `sweep` every 10 minutes picks up anything a lost webhook or a
+killed run left behind. Modal bills only while a drain runs, so a demo fits
+in the free Starter credit. The image bakes in the Whisper model, so a cold
+start doesn't download it.
+
+```bash
+pip install modal
+modal setup                                   # log in
+modal secret create prosody-worker \
+  SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... \
+  WORKER_WEBHOOK_TOKEN=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
+modal deploy modal_app.py                     # prints the wake URL
+npx supabase db push                          # adds the trigger
+```
+
+Then store the wake URL and the same token in Vault (Supabase SQL editor).
+Until both secrets exist, the trigger does nothing:
+
+```sql
+select vault.create_secret('https://<workspace>--prosody-worker-wake.modal.run', 'worker_webhook_url');
+select vault.create_secret('<WORKER_WEBHOOK_TOKEN>', 'worker_webhook_token');
+```
+
+Logs: `modal app logs prosody-worker`. YouTube often blocks downloads from
+datacenter IPs, Modal's included, so YouTube clips may fail there while
+uploads work. A local `python -m prosody_worker` can run at the same time,
+because claims keep the two from processing the same row.
+
 ### Importing CLI analyses
 
 An `analyze --json` file can be saved to the table without re-running
