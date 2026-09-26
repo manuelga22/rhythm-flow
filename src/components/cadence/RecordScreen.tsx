@@ -3,7 +3,7 @@ import { ArrowRight, Eye, EyeOff, Mic, Pause, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatTime, waveA } from "./data";
 import type { PracticePhrase } from "./data";
-import { BackButton, Waveform } from "./primitives";
+import { BackButton, SeekBar, Waveform } from "./primitives";
 
 export type TakeAudio = { url: string; duration: number; peaks: number[] };
 
@@ -48,6 +48,12 @@ export function RecordScreen({ kind, recording, seconds, onRecord, onBack, onAna
     if (!playing && playPos >= seconds) setPlayPos(0);
     setPlaying((v) => !v);
   };
+  const seek = (position: number) => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.currentTime = position;
+    setPlayPos(position);
+  };
   const liveBars = recording ? levels : take?.peaks;
   const bars = live ? (liveBars ?? waveA.map(() => 7)) : hasTake || recording ? waveA : waveA.map(() => 7);
   return (
@@ -67,12 +73,6 @@ export function RecordScreen({ kind, recording, seconds, onRecord, onBack, onAna
           <Waveform bars={bars} tone="primary" tall />
           <div className="mt-3 flex justify-between font-mono text-[10px] uppercase tracking-widest text-background/40"><span>You</span><span>{isShadow ? "Match the reference" : "Explain it your way"}</span></div>
         </div>
-        {isShadow && showTranscript && (
-          <div className="mt-6 rounded-xl border border-background/10 bg-background/5 p-4">
-            <span className="font-mono text-[10px] uppercase tracking-widest text-background/50">{selectedPhrase ? `Phrase ${selectedPhrase.id} · selected practice` : "Full clip · bold words carry the beat"}</span>
-            <p className="mt-2 text-lg leading-relaxed text-background/85">“{transcriptParts.map((part, index) => part.accent ? <strong key={`${part.text}-${index}`} className="text-background">{part.text}<span className="ml-0.5 text-primary">{part.accent === "up" ? "↗" : "↘"}</span></strong> : part.text)}”</p>
-          </div>
-        )}
         {hasTake && !recording && (
           <div className="mt-6 space-y-3">
             {live && take && <audio ref={audioRef} src={take.url} preload="auto" onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => { setPlaying(false); setPlayPos(take.duration); }} onTimeUpdate={(event) => setPlayPos(event.currentTarget.currentTime)} className="hidden" />}
@@ -80,18 +80,29 @@ export function RecordScreen({ kind, recording, seconds, onRecord, onBack, onAna
               <button type="button" onClick={togglePlayback} aria-label={playing ? "Pause your recording" : "Play your recording"} className="flex size-10 shrink-0 items-center justify-center rounded-full bg-background text-foreground">{playing ? <Pause className="size-4" /> : <Play className="size-4" />}</button>
               <div className="min-w-0 flex-1">
                 <div className="flex justify-between font-mono text-[10px] uppercase tracking-widest text-background/50"><span>Your take</span><span className="tabular-nums">{formatTime(playPos)} / {formatTime(takeSeconds)}</span></div>
-                <div role="progressbar" aria-valuemin={0} aria-valuemax={Math.ceil(takeSeconds)} aria-valuenow={Math.floor(playPos)} className="mt-2 h-1.5 overflow-hidden rounded-full bg-background/15"><div className="h-full bg-primary transition-[width] duration-200" style={{ width: `${takeSeconds ? Math.min(100, (playPos / takeSeconds) * 100) : 0}%` }} /></div>
+                <SeekBar value={playPos} max={takeSeconds} label="Your take position" onSeek={live ? seek : undefined} />
               </div>
             </div>
             <Button onClick={() => { audioRef.current?.pause(); setPlaying(false); onAnalyze(); }} className="h-12 w-full rounded-2xl bg-primary text-primary-foreground shadow-none hover:bg-primary/90">{live ? "Submit for review" : "Get feedback"} <ArrowRight /></Button>
           </div>
         )}
+        {isShadow && (
+          <div className="mt-6">
+            <div className="flex justify-end">
+              <button type="button" onClick={() => setShowTranscript((value) => !value)} aria-pressed={showTranscript} className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[10px] uppercase tracking-widest text-background/60 hover:bg-background/10 hover:text-background [&_svg]:size-3.5">
+                {showTranscript ? <EyeOff /> : <Eye />} {showTranscript ? "Hide transcript" : "Show transcript"}
+              </button>
+            </div>
+            {showTranscript && (
+              <div className="mt-2 rounded-xl border border-background/10 bg-background/5 p-4">
+                <span className="font-mono text-[10px] uppercase tracking-widest text-background/50">{selectedPhrase ? `Phrase ${selectedPhrase.id} · selected practice` : "Full clip · bold words carry the beat"}</span>
+                <p className="mt-2 text-lg leading-relaxed text-background/85">“{transcriptParts.map((part, index) => part.accent ? <strong key={`${part.text}-${index}`} className="text-background">{part.text}<span className="ml-0.5 text-primary">{part.accent === "up" ? "↗" : "↘"}</span></strong> : part.text)}”</p>
+              </div>
+            )}
+          </div>
+        )}
       </section>
-      {isShadow ? (
-        <Button onClick={() => setShowTranscript((value) => !value)} variant="outline" aria-pressed={showTranscript} className="mt-4 h-11 w-full rounded-xl border-ink/15 bg-transparent shadow-none">
-           {showTranscript ? <EyeOff /> : <Eye />} {showTranscript ? "Hide transcript" : "Show transcript"}
-        </Button>
-      ) : (
+      {!isShadow && (
         <div className="mt-5 min-h-32 rounded-xl border border-dashed border-ink/20 p-5 text-center">
           <p className="font-display text-2xl">NO SCRIPT THIS TIME.</p><p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">Explain the same idea in your own words. Keep the relaxed rhythm and let small words stay small.</p>
         </div>

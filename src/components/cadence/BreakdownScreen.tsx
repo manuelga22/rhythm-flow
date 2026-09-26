@@ -22,7 +22,7 @@ export function BreakdownScreen({ status, error, title, phrases, clipSource, sel
   const youtubeMount = useRef<HTMLDivElement | null>(null);
   // Hold the source back until the phrases (and the YouTube mount) render.
   const player = useClipPlayer(status === "ready" ? clipSource : null, youtubeMount);
-  const phraseRefs = useRef<Record<number, HTMLButtonElement | null>>({});
+  const phraseRefs = useRef<Record<number, HTMLLIElement | null>>({});
   const timeline = phraseTimeline(phrases);
   const elapsed = player.currentTime;
   const totalSeconds = player.duration || (timeline.at(-1)?.end ?? 0);
@@ -43,9 +43,9 @@ export function BreakdownScreen({ status, error, title, phrases, clipSource, sel
     phraseRefs.current[activePhrase.id]?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [activePhrase, clipPlaying]);
 
-  const selectedRef = useRef<HTMLDivElement | null>(null);
+  // Bring the selected phrase's actions into view, e.g. on a phrase near the bottom of the screen.
   useEffect(() => {
-    if (selectedPhrase) selectedRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    if (selectedPhrase) phraseRefs.current[selectedPhrase.id]?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [selectedPhrase]);
 
   const toggleClip = () => (clipPlaying ? player.pause() : player.play());
@@ -144,61 +144,65 @@ export function BreakdownScreen({ status, error, title, phrases, clipSource, sel
           <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Structure</p>
           <p className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground">↗ Rise · ↘ Fall</p>
         </div>
-        <p className="mt-3 text-sm leading-7 text-muted-foreground">
-          {phrases.map((phrase, index) => {
+        <ol className="mt-3 space-y-1">
+          {phrases.map((phrase) => {
             const selected = selectedPhrase?.id === phrase.id;
             const active = clipPlaying && activePhrase?.id === phrase.id;
+            const phrasePlaying = playingPhrase === phrase.id;
             return (
-              <button
+              <li
                 key={phrase.id}
                 ref={(element) => { phraseRefs.current[phrase.id] = element; }}
-                onClick={() => setSelectedPhrase(selected ? null : phrase)}
-                aria-pressed={selected}
-                aria-label={`${selected ? "Deselect" : "Select"} phrase ${phrase.id}: ${phrase.text}`}
-                className={`rounded px-0.5 py-0.5 text-left transition-colors ${active ? "bg-primary/15 text-foreground" : "hover:bg-ink/5"} ${selected ? "bg-primary/20 ring-1 ring-primary/40" : ""}`}
+                className={`rounded-xl transition-colors ${selected ? "bg-primary/10 ring-1 ring-primary/40" : active ? "bg-primary/10" : ""}`}
               >
-                <AccentPhrase phrase={phrase} />
-                {index < phrases.length - 1 && <span className="mx-1.5 text-ink/25">|</span>}
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedPhrase(selected ? null : phrase)}
+                  aria-pressed={selected}
+                  aria-label={`${selected ? "Deselect" : "Select"} phrase ${phrase.id}: ${phrase.text}`}
+                  className={`flex w-full items-baseline gap-3 rounded-xl px-3 py-2 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary/60 ${selected ? "" : "hover:bg-ink/5"}`}
+                >
+                  <span className="w-4 shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground/70">{String(phrase.id).padStart(2, "0")}</span>
+                  <span className={`text-sm leading-6 ${selected || active ? "text-foreground" : "text-muted-foreground"}`}><AccentPhrase phrase={phrase} /></span>
+                </button>
+                {selected && (
+                  <div className="flex items-center justify-between gap-2 pb-2.5 pl-10 pr-2.5 animate-in fade-in slide-in-from-top-1 duration-200">
+                    <span className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground">{phrase.durationSeconds} sec{phrase.pauseMs ? ` · ${phrase.pauseMs} ms pause` : ""}</span>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <Button onClick={() => togglePhrase(phrase.id)} disabled={!canPlay} variant="outline" size="icon" aria-label={`${phrasePlaying ? "Pause" : "Play"} reference for phrase ${phrase.id}`} className="size-9 rounded-full border-ink/15 bg-background shadow-none hover:bg-ink/5">
+                        {phrasePlaying ? <Pause className="size-4" /> : <Play className="size-4" />}
+                      </Button>
+                      <Button onClick={onContinue} aria-label={`Practice phrase ${phrase.id}`} className="h-9 rounded-full bg-primary px-4 text-primary-foreground shadow-none hover:bg-primary/90">
+                        Practice <ArrowRight />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </li>
             );
           })}
-        </p>
+        </ol>
         <p className="mt-3 font-mono text-[9px] uppercase tracking-widest text-muted-foreground">Tap any phrase to practice it on its own.</p>
       </section>
 
-      {selectedPhrase && (
-        <section ref={selectedRef} className="mt-5 animate-rise rounded-2xl border border-primary/30 bg-primary/5 p-4" aria-live="polite">
-          <div className="flex items-center justify-between gap-3">
-            <p className="font-mono text-[10px] uppercase tracking-widest text-primary">Phrase {selectedPhrase.id} selected</p>
-            <Button onClick={() => togglePhrase(selectedPhrase.id)} disabled={!canPlay} variant="outline" size="icon" aria-label={`${playingPhrase === selectedPhrase.id ? "Pause" : "Play"} reference for phrase ${selectedPhrase.id}`} className="size-9 shrink-0 rounded-full border-ink/15 bg-transparent shadow-none">
-              {playingPhrase === selectedPhrase.id ? <Pause className="size-4" /> : <Play className="size-4" />}
-            </Button>
-          </div>
-          <p className="mt-2 text-sm leading-7 text-foreground"><AccentPhrase phrase={selectedPhrase} /></p>
-          <p className="mt-2 font-mono text-[9px] uppercase tracking-widest text-muted-foreground">{selectedPhrase.durationSeconds} sec{selectedPhrase.pauseMs ? ` · pause ${selectedPhrase.pauseMs} ms after` : " · clip end"}</p>
-          <Button onClick={onContinue} className="mt-4 h-12 w-full rounded-xl bg-primary text-primary-foreground shadow-none hover:bg-primary/90">
-            Practice phrase {selectedPhrase.id} <ArrowRight />
-          </Button>
+      <div className="mt-6 rounded-2xl border border-ink/10 bg-card p-3">
+        {selectedPhrase ? (
           <Button
             onClick={() => {
               setSelectedPhrase(null);
               onContinue();
             }}
             variant="outline"
-            className="mt-2 h-12 w-full rounded-xl border-ink/15 bg-transparent shadow-none hover:bg-ink/5"
+            className="h-12 w-full rounded-xl border-ink/15 bg-transparent shadow-none hover:bg-ink/5"
           >
             Practice the whole clip instead <ArrowRight />
           </Button>
-        </section>
-      )}
-
-      {!selectedPhrase && (
-        <div className="mt-6 rounded-2xl border border-ink/10 bg-card p-3">
+        ) : (
           <Button onClick={onContinue} className="h-12 w-full rounded-xl bg-primary text-primary-foreground shadow-none hover:bg-primary/90">
             Practice full clip <ArrowRight />
           </Button>
-        </div>
-      )}
+        )}
+      </div>
     </main>
   );
 }
