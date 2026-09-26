@@ -21,7 +21,7 @@ export function TakeCard({ take, expanded, onToggle, onRetry }: { take: TakeEntr
       </button>
       {expanded && (
         <div id={bodyId} className="space-y-5 border-t border-ink/10 px-4 pb-5 pt-4 animate-in fade-in duration-200">
-          <TakePlayer url={take.url} duration={take.duration} />
+          {take.url ? <TakePlayer url={take.url} duration={take.duration} /> : <p className="text-sm text-muted-foreground">This take's audio isn't available right now.</p>}
           {take.status === "ready" && take.result && <ComparisonDetails result={take.result} />}
           {(take.status === "submitting" || take.status === "processing") && (
             <p className="flex items-center gap-2 text-sm text-muted-foreground" aria-live="polite">
@@ -32,7 +32,7 @@ export function TakeCard({ take, expanded, onToggle, onRetry }: { take: TakeEntr
           {take.status === "failed" && (
             <div role="alert" className="rounded-xl border border-caution/30 bg-caution/10 p-4">
               <p className="flex items-start gap-2 text-sm"><CircleAlert className="mt-0.5 size-4 shrink-0 text-caution" />{take.error ?? "We couldn't compare this take."}</p>
-              <Button onClick={onRetry} variant="outline" size="sm" className="mt-3 rounded-full border-ink/15 bg-transparent shadow-none hover:bg-ink/5"><RotateCcw /> Retry analysis</Button>
+              {take.canRetry && <Button onClick={onRetry} variant="outline" size="sm" className="mt-3 rounded-full border-ink/15 bg-transparent shadow-none hover:bg-ink/5"><RotateCcw /> Retry analysis</Button>}
             </div>
           )}
         </div>

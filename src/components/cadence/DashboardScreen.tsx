@@ -12,7 +12,7 @@ export function DashboardScreen() {
           <p className="mt-6 max-w-xl text-base leading-relaxed text-muted-foreground">Train the rhythm, stress, and melody that fluent speakers use when words become conversation.</p>
           <Link to="/method" className="group flex items-center justify-between gap-4 border-b border-ink/10 py-9">
                <div>
-                 <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">How it works</p>
+                 <p className="font-mono text-[12px] uppercase tracking-widest">How it works</p>
                  <h2 className="mt-2 font-display text-2xl">THE METHOD</h2>
                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground">Choose a voice, shadow it, then improvise without the script.</p>
                </div>

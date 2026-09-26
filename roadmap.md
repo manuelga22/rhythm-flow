@@ -14,3 +14,7 @@
 - [x] Verify playback controls and progress on mobile and desktop
 - [x] Make structure-line phrases tappable with an isolated-practice card; remove the breath-units list
 - [x] Verify tappable structure flow on mobile
+- [x] Add accounts: email-code and Google sign-in, profile sheet with display name, sign out, delete account
+- [x] Add a sign-in-to-save prompt for guests
+- [x] Save practice sessions to the signed-in account
+- [x] Continue a saved session from the Source step

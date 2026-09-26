@@ -19,12 +19,14 @@ export type Analysis = {
   source_key: string;
   duration_seconds: number | null;
   view: AnalysisView | null;
+  /** Object path of an uploaded clip in the reference-audio bucket. */
+  audio_path: string | null;
 };
 
 export type AnalysisSource = { kind: "youtube"; url: string } | { kind: "upload"; file: File };
 
 // Everything but the raw `recording` blob, which the UI never needs.
-const COLUMNS = "id,status,error,title,source_type,source_key,duration_seconds,view";
+const COLUMNS = "id,status,error,title,source_type,source_key,duration_seconds,view,audio_path";
 const AUDIO_BUCKET = "reference-audio";
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 // Safety net alongside Realtime, which can miss updates while reconnecting.

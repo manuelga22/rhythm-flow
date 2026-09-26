@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BottomBar } from "@/components/cadence/BottomBar";
@@ -7,13 +8,16 @@ import { FeedbackScreen } from "@/components/cadence/FeedbackScreen";
 import { Header } from "@/components/cadence/Header";
 import { RecordScreen } from "@/components/cadence/RecordScreen";
 import { ShadowScreen } from "@/components/cadence/ShadowScreen";
-import { SourceScreen } from "@/components/cadence/SourceScreen";
+import { SourceScreen, type SourceTab } from "@/components/cadence/SourceScreen";
 import type { PracticePhrase, Stage } from "@/components/cadence/data";
 import { useAnalysis } from "@/hooks/use-analysis";
+import { useAuth } from "@/hooks/use-auth";
 import type { ClipSource } from "@/hooks/use-clip-player";
 import { useRecorder } from "@/hooks/use-recorder";
+import { usePracticeSession } from "@/hooks/use-practice-session";
 import { useTakeHistory } from "@/hooks/use-take-history";
 import { youtubeId, type AnalysisSource } from "@/lib/analysis";
+import { referenceAudioUrl, type PracticeSession } from "@/lib/sessions";
 
 export const Route = createFileRoute("/practice")({
   head: () => ({
@@ -32,6 +36,7 @@ export const Route = createFileRoute("/practice")({
 function PracticePage() {
   const navigate = useNavigate();
   const [stage, setStage] = useState<Stage>("source");
+  const [sourceTab, setSourceTab] = useState<SourceTab>("new");
   const [sourceMode, setSourceMode] = useState<"youtube" | "upload">("youtube");
   const [url, setUrl] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -42,19 +47,32 @@ function PracticePage() {
   const fileRef = useRef<HTMLInputElement>(null);
   // Shadow takes come from the microphone; improvise still runs on the simulated timer.
   const recorder = useRecorder();
-  const { analysis, status: analysisStatus, error: analysisError, submitting, start: startAnalysis } = useAnalysis();
-  // Shadow takes submitted for feedback this session, for the current clip and phrase.
-  const history = useTakeHistory(analysis?.id);
+  const { analysis, status: analysisStatus, error: analysisError, submitting, start: startAnalysis, open: openAnalysis } = useAnalysis();
+  const { user } = useAuth();
+  // Signed-in practice is saved to a session per clip; guests get none.
+  const { sessionId, savedTakes } = usePracticeSession(analysis?.status === "ready" ? analysis.id : undefined);
+  const phraseId = selectedPhrase?.id ?? null;
+  const savedForPhrase = useMemo(() => savedTakes.filter((take) => take.phrase_id === phraseId), [savedTakes, phraseId]);
+  // Shadow takes for the current clip and phrase: saved ones plus those submitted this visit.
+  const history = useTakeHistory(analysis?.id, { sessionId, saved: savedForPhrase });
   const phrases = analysis?.view?.phrases ?? [];
   const clipTitle = analysis?.view?.title ?? analysis?.title ?? "Reference clip";
 
-  // Uploads play from the file the user just picked, whichever backend
-  // analysed it. TODO: when past analyses can be reopened without the file,
-  // play Supabase uploads from a signed Storage URL instead.
+  // Uploads play from the file the user just picked. A saved session reopened
+  // without the file plays the stored upload from a signed Storage URL.
   const fileUrl = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
+  const storedAudioPath = analysis?.source_type === "upload" && !file && user ? analysis.audio_path : null;
+  const { data: storedAudioUrl } = useQuery({
+    queryKey: ["reference-audio", storedAudioPath],
+    queryFn: () => referenceAudioUrl(storedAudioPath as string),
+    enabled: Boolean(storedAudioPath),
+    // Signed URLs expire after an hour.
+    staleTime: 30 * 60 * 1000,
+  });
+  const uploadUrl = fileUrl ?? (storedAudioPath ? (storedAudioUrl ?? null) : null);
   useEffect(() => () => { if (fileUrl) URL.revokeObjectURL(fileUrl); }, [fileUrl]);
   const videoId = analysis?.source_key.startsWith("youtube:") ? analysis.source_key.slice("youtube:".length) : youtubeId(url);
-  const clipSource: ClipSource = analysis?.source_type === "upload" ? (fileUrl ? { kind: "audio", url: fileUrl } : null) : videoId ? { kind: "youtube", videoId } : null;
+  const clipSource: ClipSource = analysis?.source_type === "upload" ? (uploadUrl ? { kind: "audio", url: uploadUrl } : null) : videoId ? { kind: "youtube", videoId } : null;
 
   useEffect(() => {
     if (!recording) return;
@@ -81,11 +99,21 @@ function PracticePage() {
     go("breakdown");
   };
 
+  // Reopen a saved clip on the Structure step; its takes load with the session.
+  const resume = (session: PracticeSession) => {
+    setSelectedPhrase(null);
+    setSourceMode(session.sourceType);
+    // The picked file (if any) belongs to another clip.
+    setFile(null);
+    openAnalysis(session.analysisId);
+    go("breakdown");
+  };
+
   return (
     <div className="min-h-screen bg-background text-foreground antialiased">
       <Header stage={stage} />
       {stage === "source" && (
-        <SourceScreen mode={sourceMode} setMode={setSourceMode} url={url} setUrl={setUrl} file={file} setFile={setFile} fileRef={fileRef} submitError={analysisStatus === "failed" ? analysisError : null} submitting={submitting} onBack={() => navigate({ to: "/" })} onContinue={analyze} />
+        <SourceScreen tab={sourceTab} setTab={setSourceTab} mode={sourceMode} setMode={setSourceMode} url={url} setUrl={setUrl} file={file} setFile={setFile} fileRef={fileRef} submitError={analysisStatus === "failed" ? analysisError : null} submitting={submitting} onBack={() => navigate({ to: "/" })} onContinue={analyze} onResume={resume} />
       )}
       {stage === "breakdown" && (
         <BreakdownScreen status={analysisStatus} error={analysisError} title={clipTitle} phrases={phrases} clipSource={clipSource} selectedPhrase={selectedPhrase} setSelectedPhrase={setSelectedPhrase} onBack={() => go("source")} onContinue={() => go("shadow")} />

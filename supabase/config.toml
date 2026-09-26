@@ -18,3 +18,21 @@ file_size_limit = "25MiB"
 
 [studio]
 port = 54323
+
+[auth]
+site_url = "http://localhost:8080"
+additional_redirect_urls = ["http://localhost:8080", "http://127.0.0.1:8080"]
+
+# Sign-in uses a 6-digit code sent by email; local mail lands in Inbucket
+# (http://127.0.0.1:54324).
+[auth.email]
+otp_length = 6
+
+# Credentials from a Google Cloud OAuth client, read from the environment
+# (see .env.example). Authorized redirect URI:
+# http://127.0.0.1:54321/auth/v1/callback
+[auth.external.google]
+enabled = true
+client_id = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID)"
+secret = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET)"
+skip_nonce_check = true

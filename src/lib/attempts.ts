@@ -40,8 +40,11 @@ const EXTENSIONS: Record<string, string> = {
   "audio/wave": "wav",
 };
 
-/** Upload a recorded take and queue it for comparison against the reference. */
-export async function submitAttempt({ analysisId, phraseId, blob }: { analysisId: string; phraseId: number | null; blob: Blob }): Promise<Attempt> {
+/**
+ * Upload a recorded take and queue it for comparison against the reference.
+ * With a session (signed-in users) the take is saved to it.
+ */
+export async function submitAttempt({ analysisId, phraseId, blob, sessionId = null, duration = null }: { analysisId: string; phraseId: number | null; blob: Blob; sessionId?: string | null; duration?: number | null }): Promise<Attempt> {
   if (!supabase) throw new Error("Error sending your take for feedback.");
   if (blob.size > MAX_TAKE_BYTES) throw new Error("This take is too long to compare. Try a shorter one.");
 
@@ -55,7 +58,7 @@ export async function submitAttempt({ analysisId, phraseId, blob }: { analysisId
   if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
 
   const { data, error } = await supabase
-    .rpc("request_attempt", { p_analysis_id: analysisId, p_phrase_id: phraseId, p_audio_path: path })
+    .rpc("request_attempt", { p_analysis_id: analysisId, p_phrase_id: phraseId, p_audio_path: path, p_session_id: sessionId, p_duration: duration })
     .select(COLUMNS)
     .single<Attempt>();
   if (error) throw new Error(error.message);
