@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { User } from "@supabase/supabase-js";
 import { ArrowLeft, LogOut, Mail, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -9,8 +9,10 @@ import { Button } from "@/components/ui/button";
 import { Drawer, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
 import { Input } from "@/components/ui/input";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useAuth } from "@/hooks/use-auth";
-import { MAX_DISPLAY_NAME, deleteAccount, initials, profileKey, sendEmailCode, signInWithGoogle, signOut, updateDisplayName, verifyEmailCode, type Profile } from "@/lib/auth";
+import { MAX_DISPLAY_NAME, deleteAccount, initials, profileKey, sendEmailCode, signInWithGoogle, signOut, updateDisplayName, updateFeedbackModel, verifyEmailCode, type Profile } from "@/lib/auth";
+import { feedbackModelsKey, fetchFeedbackModels } from "@/lib/feedback-models";
 
 const CODE_LENGTH = 6;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -193,6 +195,8 @@ function SignedIn({ user, profile, onDone }: { user: User; profile: Profile | nu
         </div>
       </form>
 
+      <FeedbackModelPicker user={user} profile={profile} />
+
       <Button type="button" variant="outline" disabled={leave.isPending} onClick={() => leave.mutate()} className="mt-6 h-12 w-full rounded-2xl border-ink/15 shadow-none">
         <LogOut /> {leave.isPending ? "Signing out…" : "Sign out"}
       </Button>
@@ -242,5 +246,46 @@ function GoogleMark() {
       <path fill="#FBBC05" d="M5.3 14.3a7.2 7.2 0 0 1 0-4.6V6.6H1.3a12 12 0 0 0 0 10.8l4-3.1z" />
       <path fill="#EA4335" d="M12 4.8c1.8 0 3.3.6 4.6 1.8l3.4-3.4A12 12 0 0 0 1.3 6.6l4 3.1c.9-2.9 3.6-4.9 6.7-4.9z" />
     </svg>
+  );
+}
+
+/** Which model writes the feedback on this user's takes. Saves as soon as a model is picked. */
+function FeedbackModelPicker({ user, profile }: { user: User; profile: Profile | null }) {
+  const queryClient = useQueryClient();
+  const models = useQuery({ queryKey: feedbackModelsKey, queryFn: fetchFeedbackModels, staleTime: Infinity });
+  const choose = useMutation({
+    mutationFn: (modelId: string) => updateFeedbackModel(user.id, modelId),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(profileKey(user.id), updated);
+      toast.success("Feedback model saved.");
+    },
+  });
+
+  const options = models.data ?? [];
+  if (!options.length) return null;
+  const fallback = options.find((model) => model.is_default)?.id;
+  // A saved choice that has since been disabled is not in the list; the server uses the default then too.
+  const selected = options.some((model) => model.id === profile?.feedback_model) ? profile?.feedback_model : fallback;
+
+  return (
+    <section className="mt-6 grid gap-2">
+      <p id="feedback-model-label" className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Feedback model</p>
+      <RadioGroup aria-labelledby="feedback-model-label" value={selected ?? null} disabled={choose.isPending} onValueChange={(value) => choose.mutate(value)} className="gap-2">
+        {options.map((model) => (
+          <label key={model.id} htmlFor={`feedback-model-${model.id}`} className="flex cursor-pointer items-start gap-3 rounded-xl border border-ink/15 px-4 py-3 has-[button[data-state=checked]]:border-primary">
+            <RadioGroupItem id={`feedback-model-${model.id}`} value={model.id} className="mt-0.5" />
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold">
+                {model.label}
+                {model.is_default && <span className="ml-2 font-mono text-[10px] font-normal uppercase tracking-widest text-muted-foreground">Default</span>}
+              </span>
+              <span className="block text-sm text-muted-foreground">{model.description}</span>
+            </span>
+          </label>
+        ))}
+      </RadioGroup>
+      <p className="text-xs text-muted-foreground">Gemini models listen to your recording and the reference clip.</p>
+      {choose.error && <p role="alert" className="text-sm text-destructive">{choose.error.message}</p>}
+    </section>
   );
 }

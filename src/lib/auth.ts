@@ -3,7 +3,11 @@ import { supabase } from "@/lib/supabase";
 export type Profile = {
   id: string;
   display_name: string | null;
+  /** feedback_models.id; null means the default model. */
+  feedback_model: string | null;
 };
+
+const PROFILE_COLUMNS = "id,display_name,feedback_model";
 
 export const MAX_DISPLAY_NAME = 50;
 
@@ -64,14 +68,20 @@ export async function deleteAccount(): Promise<void> {
 }
 
 export async function fetchProfile(id: string): Promise<Profile | null> {
-  const { data, error } = await client().from("profiles").select("id,display_name").eq("id", id).maybeSingle<Profile>();
+  const { data, error } = await client().from("profiles").select(PROFILE_COLUMNS).eq("id", id).maybeSingle<Profile>();
   if (error) throw new Error(error.message);
   return data;
 }
 
 export async function updateDisplayName(id: string, name: string): Promise<Profile> {
   const displayName = name.trim().slice(0, MAX_DISPLAY_NAME) || null;
-  const { data, error } = await client().from("profiles").update({ display_name: displayName }).eq("id", id).select("id,display_name").single<Profile>();
+  const { data, error } = await client().from("profiles").update({ display_name: displayName }).eq("id", id).select(PROFILE_COLUMNS).single<Profile>();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function updateFeedbackModel(id: string, modelId: string | null): Promise<Profile> {
+  const { data, error } = await client().from("profiles").update({ feedback_model: modelId }).eq("id", id).select(PROFILE_COLUMNS).single<Profile>();
   if (error) throw new Error(error.message);
   return data;
 }

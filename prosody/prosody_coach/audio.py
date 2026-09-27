@@ -129,6 +129,50 @@ def decode_to_wav(src: str | Path, dest: str | Path, target_rate: int = TARGET_R
     return dest
 
 
+# Speech-tuned Opus: a 16 kHz mono clip at this rate is about 0.24 MB a
+# minute, an eighth of the WAV, and still clear enough for a listener to
+# judge rhythm and intonation.
+CLIP_BITRATE = 32000
+
+
+def encode_clip(
+    src: str | Path,
+    dest: str | Path,
+    start: float | None = None,
+    end: float | None = None,
+    target_rate: int = TARGET_RATE,
+) -> Path:
+    """Write ``src`` (optionally cut to ``start``..``end`` seconds) to
+    ``dest`` as mono Ogg/Opus at ``target_rate``.
+
+    Encoded with PyAV's bundled libopus, so no ffmpeg executable is needed.
+    """
+    import av
+
+    signal = load_audio(src, target_rate)
+    first = max(0, int((start or 0.0) * target_rate))
+    last = len(signal.samples) if end is None else min(len(signal.samples), int(end * target_rate))
+    if last <= first:
+        raise AudioError(f"Empty clip requested from {Path(src).name} ({start}..{end} s).")
+    pcm = (np.clip(signal.samples[first:last], -1.0, 1.0) * 32767.0).astype(np.int16)
+
+    dest = Path(dest)
+    frame = av.AudioFrame.from_ndarray(pcm.reshape(1, -1), format="s16", layout="mono")
+    frame.sample_rate = target_rate
+    try:
+        with av.open(str(dest), mode="w", format="ogg") as container:
+            stream = container.add_stream("libopus", rate=target_rate, layout="mono")
+            stream.bit_rate = CLIP_BITRATE
+            for packet in stream.encode(frame):
+                container.mux(packet)
+            # None flushes the samples the encoder is still buffering.
+            for packet in stream.encode(None):
+                container.mux(packet)
+    except av.error.FFmpegError as exc:
+        raise AudioError(f"Could not encode a clip of {Path(src).name}: {exc}") from exc
+    return dest
+
+
 def _load_wav(path: Path, target_rate: int) -> AudioSignal:
     with wave.open(str(path), "rb") as handle:
         channels = handle.getnchannels()

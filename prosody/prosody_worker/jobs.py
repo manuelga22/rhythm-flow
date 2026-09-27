@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 from typing import Callable
 
-from prosody_coach.audio import AudioError
+from prosody_coach.audio import AudioError, encode_clip
 from prosody_coach.models import Recording
 from prosody_coach.pipeline import PipelineOptions, analyze_recording
 from prosody_coach.transcribe import TranscriptionError
@@ -44,6 +44,7 @@ def process(
             source = _resolve(row, store, Path(tmp), fetch_youtube)
             options = PipelineOptions(model_size=row.get("model_size") or PipelineOptions.model_size)
             recording = analyze(source.path, "reference", options)
+            clip_path = _store_clip(row_id, source.path, store) if recording.words else None
     except (SourceError, AudioError, TranscriptionError) as exc:
         log.info("analysis %s failed: %s", row_id, exc)
         store.fail(row_id, str(exc))
@@ -65,8 +66,23 @@ def process(
         "title": title,
         "recording": recording.to_dict(),
         "view": to_practice_view(recording, title),
+        "clip_path": clip_path,
     })
     log.info("analysis %s ready (%d phrases)", row_id, len(recording.phrases))
+
+
+def _store_clip(row_id: str, source: Path, store: AnalysisStore) -> str | None:
+    """Save a compressed copy of the reference for models that listen to
+    takes. YouTube audio is not kept otherwise. Best effort: without a clip
+    those models hear the learner's take only."""
+    path = f"clips/{row_id}.ogg"
+    try:
+        clip = encode_clip(source, source.with_name("clip.ogg"))
+        store.upload_audio(path, clip.read_bytes(), content_type="audio/ogg", upsert=True)
+    except Exception:
+        log.warning("analysis %s: could not store the listening clip", row_id, exc_info=True)
+        return None
+    return path
 
 
 def _resolve(row: Row, store: AnalysisStore, dest: Path, fetch_youtube: YoutubeFetcher) -> ResolvedSource:

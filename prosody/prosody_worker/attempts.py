@@ -15,8 +15,9 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Callable
 
-from prosody_coach.audio import AudioError
-from prosody_coach.models import Phrase, Recording
+from prosody_coach.audio import AudioError, encode_clip
+from prosody_coach.listen import listen_feedback
+from prosody_coach.models import Comparison, Feedback, Phrase, Recording
 from prosody_coach.pipeline import PipelineOptions, analyze_recording, build_comparison
 from prosody_coach.transcribe import TranscriptionError
 from prosody_worker.config import MAX_ATTEMPT_BYTES
@@ -26,6 +27,10 @@ from prosody_worker.store import AttemptStore, Row
 log = logging.getLogger(__name__)
 
 Analyzer = Callable[[str | Path, str, PipelineOptions], Recording]
+Listener = Callable[..., Feedback]
+
+# Context kept around the practised phrase in the clip the model hears.
+CLIP_PAD_SECONDS = 0.25
 
 NO_SPEECH = "We couldn't hear any speech in your take. Try again closer to the mic."
 
@@ -34,7 +39,12 @@ class AttemptError(RuntimeError):
     """An attempt that cannot be compared, with a message the UI can show."""
 
 
-def process_attempt(row: Row, store: AttemptStore, analyze: Analyzer = analyze_recording) -> None:
+def process_attempt(
+    row: Row,
+    store: AttemptStore,
+    analyze: Analyzer = analyze_recording,
+    listen: Listener = listen_feedback,
+) -> None:
     """Analyse the take, compare it with its reference and write the result.
 
     Expected failures mark the row failed with a readable message. Anything
@@ -42,11 +52,17 @@ def process_attempt(row: Row, store: AttemptStore, analyze: Analyzer = analyze_r
     """
     row_id = row["id"]
     try:
-        reference = _load_reference(row, store)
+        reference_row = _load_reference_row(row, store)
+        reference = reference_excerpt(Recording.from_dict(reference_row["recording"]), row.get("phrase_id"))
         with tempfile.TemporaryDirectory(prefix="prosody_attempt_") as tmp:
             path = _download_take(row, store, Path(tmp))
             options = PipelineOptions(model_size=row.get("model_size") or PipelineOptions.model_size)
             user = analyze(path, "user", options)
+            if not user.words:
+                store.fail_attempt(row_id, NO_SPEECH)
+                return
+            comparison = build_comparison(reference, user)
+            _listen(row, store, comparison, path, reference, reference_row.get("clip_path"), Path(tmp), listen)
     except AttemptError as exc:
         log.info("attempt %s failed: %s", row_id, exc)
         store.fail_attempt(row_id, str(exc))
@@ -63,18 +79,54 @@ def process_attempt(row: Row, store: AttemptStore, analyze: Analyzer = analyze_r
         store.fail_attempt(row_id, "Unexpected error while comparing your take.")
         raise
 
-    if not user.words:
-        store.fail_attempt(row_id, NO_SPEECH)
-        return
-
-    comparison = build_comparison(reference, user)
     # The temp path means nothing to readers of a world-readable row.
     user.path = row["audio_path"]
     store.complete_attempt(row_id, {
         "user_recording": user.to_dict(),
         "result": to_comparison_view(comparison),
     })
-    log.info("attempt %s ready (%d issues)", row_id, len(comparison.issues))
+    log.info(
+        "attempt %s ready (%d issues, %s feedback)",
+        row_id, len(comparison.issues), comparison.feedback.model or comparison.feedback.source,
+    )
+
+
+def _listen(
+    row: Row,
+    store: AttemptStore,
+    comparison: Comparison,
+    take: Path,
+    reference: Recording,
+    clip_path: str | None,
+    tmp: Path,
+    listen: Listener,
+) -> None:
+    """Replace the template feedback with feedback from the model the
+    learner chose, if it listens. Any failure keeps the templates: the
+    learner still gets feedback, and the reason goes to the log."""
+    choice = row.get("feedback_models") or {}
+    if choice.get("provider") != "gemini" or not choice.get("model"):
+        return
+    try:
+        take_clip = encode_clip(take, tmp / "take.ogg")
+        reference_clip = _reference_clip(store, reference, clip_path, tmp)
+        comparison.feedback = listen(
+            comparison, take_clip, reference_clip, choice["model"], label=choice.get("label"),
+        )
+    except Exception:
+        log.warning("attempt %s: %s feedback failed, using templates", row["id"], choice["model"], exc_info=True)
+
+
+def _reference_clip(store: AttemptStore, reference: Recording, clip_path: str | None, tmp: Path) -> Path | None:
+    """The practised part of the stored reference clip, or None when this
+    reference was analysed before clips were kept."""
+    if not clip_path or not reference.words:
+        return None
+    full = tmp / "reference_full.ogg"
+    full.write_bytes(store.download_clip(clip_path))
+    start = max(0.0, reference.words[0].start - CLIP_PAD_SECONDS)
+    end = reference.words[-1].end + CLIP_PAD_SECONDS
+    return encode_clip(full, tmp / "reference.ogg", start=start, end=end)
 
 
 def reference_excerpt(recording: Recording, phrase_id: int | None) -> Recording:
@@ -110,11 +162,11 @@ def reference_excerpt(recording: Recording, phrase_id: int | None) -> Recording:
     )
 
 
-def _load_reference(row: Row, store: AttemptStore) -> Recording:
+def _load_reference_row(row: Row, store: AttemptStore) -> Row:
     data = store.fetch_reference(row["analysis_id"])
-    if not data or not data.get("words"):
+    if not data or not (data.get("recording") or {}).get("words"):
         raise AttemptError("The reference clip for this take is no longer available.")
-    return reference_excerpt(Recording.from_dict(data), row.get("phrase_id"))
+    return data
 
 
 def _download_take(row: Row, store: AttemptStore, dest: Path) -> Path:

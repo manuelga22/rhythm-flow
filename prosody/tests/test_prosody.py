@@ -9,9 +9,12 @@ no recordings and no transcription model. Run with:
 
 from __future__ import annotations
 
+import json
 import math
+import os
 import sys
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 
 import numpy as np
@@ -19,7 +22,8 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from prosody_coach.analysis import _syllable_estimate, analyze
-from prosody_coach.audio import extract_features, load_audio, semitones
+from prosody_coach import listen
+from prosody_coach.audio import encode_clip, extract_features, load_audio, semitones
 from prosody_coach.compare import align_words, compare
 from prosody_coach.feedback import generate
 from prosody_coach.models import IssueType, PitchMovement, Prominence
@@ -475,6 +479,132 @@ def test_llm_falls_back_to_templates_without_a_key(monkeypatch=None):
     finally:
         if saved is not None:
             os.environ["ANTHROPIC_API_KEY"] = saved
+
+
+# --------------------------------------------------------------------------
+# Listening feedback (Gemini)
+# --------------------------------------------------------------------------
+
+
+def _clips() -> tuple[Path, Path]:
+    ref_wav, take_wav = _TMP / "listen_ref.wav", _TMP / "listen_take.wav"
+    synth.reference_utterance().write_wav(ref_wav)
+    synth.flat_user_utterance().write_wav(take_wav)
+    return encode_clip(ref_wav, _TMP / "listen_ref.ogg"), encode_clip(take_wav, _TMP / "listen_take.ogg")
+
+
+class _FakeResponse:
+    def __init__(self, status_code: int, body: dict) -> None:
+        self.status_code = status_code
+        self._body = body
+        self.text = json.dumps(body)
+
+    def json(self) -> dict:
+        return self._body
+
+
+@contextmanager
+def _gemini(status_code: int = 200, body: dict | None = None, key: str | None = "test-key"):
+    """Stub httpx.post and GEMINI_API_KEY; yields the captured requests."""
+    import httpx
+
+    calls: list[dict] = []
+    reply = {
+        "positive": "You landed THOUGHT.",
+        "primary_issue": "You gave IT a beat.",
+        "secondary_issue": None,
+        "next_attempt": "Lean into QUICK.",
+    }
+    body = body if body is not None else {"candidates": [{"content": {"parts": [{"text": json.dumps(reply)}]}}]}
+
+    def fake_post(url, **kwargs):
+        calls.append({"url": url, **kwargs})
+        return _FakeResponse(status_code, body)
+
+    saved_post, saved_key = httpx.post, os.environ.pop("GEMINI_API_KEY", None)
+    httpx.post = fake_post
+    if key:
+        os.environ["GEMINI_API_KEY"] = key
+    try:
+        yield calls
+    finally:
+        httpx.post = saved_post
+        os.environ.pop("GEMINI_API_KEY", None)
+        if saved_key is not None:
+            os.environ["GEMINI_API_KEY"] = saved_key
+
+
+def test_encode_clip_slices_and_compresses():
+    wav = _TMP / "clip_src.wav"
+    synth.reference_utterance().write_wav(wav)
+
+    whole = encode_clip(wav, _TMP / "clip_whole.ogg")
+    part = encode_clip(wav, _TMP / "clip_part.ogg", start=0.5, end=1.5)
+
+    assert whole.read_bytes()[:4] == b"OggS"
+    assert whole.stat().st_size < wav.stat().st_size / 3
+    assert abs(load_audio(whole).duration - load_audio(wav).duration) < 0.05
+    assert abs(load_audio(part).duration - 1.0) < 0.05
+
+
+def test_listen_prompt_is_the_markdown_file_plus_reply_format():
+    prompt = listen.system_prompt()
+
+    assert prompt.startswith(listen.PROMPT_PATH.read_text(encoding="utf-8").strip())
+    assert prompt.rstrip().endswith(listen.OUTPUT_FORMAT.rstrip())
+    for key in ("positive", "primary_issue", "secondary_issue", "next_attempt"):
+        assert f'"{key}"' in prompt
+
+
+def test_listen_sends_both_clips_and_the_measurements():
+    ref, take = _clips()
+    comparison = build_comparison(reference(), flat_user())
+
+    with _gemini() as calls:
+        feedback = listen.listen_feedback(comparison, take, ref, "gemini-3.1-flash-lite", label="Gemini Flash-Lite")
+
+    request = calls[0]
+    assert request["url"].endswith("/models/gemini-3.1-flash-lite:generateContent")
+    assert request["headers"]["x-goog-api-key"] == "test-key"
+    body = request["json"]
+    parts = body["contents"][0]["parts"]
+    audio = [part["inline_data"] for part in parts if "inline_data" in part]
+    assert [clip["mime_type"] for clip in audio] == ["audio/ogg", "audio/ogg"]
+    assert "Audio 1" in parts[0]["text"]
+    assert "reference_beats" in parts[-1]["text"]
+    assert body["generationConfig"]["responseMimeType"] == "application/json"
+    assert "prosody coach" in body["system_instruction"]["parts"][0]["text"]
+
+    assert feedback.source == "audio"
+    assert feedback.model == "Gemini Flash-Lite"
+    assert feedback.positive == "You landed THOUGHT."
+    assert feedback.secondary_issue is None
+    assert feedback.categories == comparison.feedback.categories
+
+
+def test_listen_without_reference_says_so():
+    _, take = _clips()
+    comparison = build_comparison(reference(), flat_user())
+
+    with _gemini() as calls:
+        listen.listen_feedback(comparison, take, None, "gemini-3.1-flash-lite")
+
+    parts = calls[0]["json"]["contents"][0]["parts"]
+    assert sum("inline_data" in part for part in parts) == 1
+    assert "No reference audio" in parts[0]["text"]
+
+
+def test_listen_raises_on_http_error_and_missing_key():
+    _, take = _clips()
+    comparison = build_comparison(reference(), flat_user())
+
+    for kwargs in ({"status_code": 429, "body": {"error": "quota"}}, {"key": None}, {"body": {"candidates": []}}):
+        with _gemini(**kwargs):
+            try:
+                listen.listen_feedback(comparison, take, None, "gemini-3.1-flash-lite")
+            except RuntimeError:
+                continue
+            raise AssertionError(f"expected RuntimeError for {kwargs}")
 
 
 # --------------------------------------------------------------------------

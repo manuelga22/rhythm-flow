@@ -216,6 +216,23 @@ Attempts run on their own thread with their own Supabase client, so a
 learner waiting on feedback never queues behind a long reference analysis.
 Log lines are tagged `[analyses]` or `[attempts]`.
 
+**Feedback models.** Signed-in users pick who writes their take feedback in
+the account drawer. The options are the rows of `feedback_models`: Gemini
+models, or Standard (the templates). Guests get the default row. For a
+Gemini model, `prosody_coach/listen.py` sends the take and the practised
+phrase of the reference, both as 16 kHz Ogg/Opus, along with the measured
+comparison, and the model writes the four feedback notes. Any failure, such
+as a missing `GEMINI_API_KEY` or a quota error, keeps the template feedback
+and logs a warning. Reference clips are saved at analysis time
+(`analyses.clip_path`); older analyses have none, so for those the model
+hears the take only.
+
+The coaching prompt is `prosody_coach/prompts/listen_feedback.md`. Edit it
+freely: the reply format the worker parses is appended in code. Changes
+apply on the next take locally and after `modal deploy` on Modal. To add or
+retire a model, insert or disable a `feedback_models` row; no code change is
+needed.
+
 Analyses are cached per source (`youtube:<id>` or `upload:<sha256>`),
 Whisper model and `ANALYZER_VERSION`. Bump the version in both
 `prosody_worker/config.py` and `analysis_settings()` in the migration
@@ -253,7 +270,7 @@ start doesn't download it.
 pip install modal
 modal setup                                   # log in
 modal secret create prosody-worker \
-  SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... \
+  SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... GEMINI_API_KEY=... \
   WORKER_WEBHOOK_TOKEN=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
 modal deploy modal_app.py                     # prints the wake URL
 npx supabase db push                          # adds the trigger

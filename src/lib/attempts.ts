@@ -12,7 +12,8 @@ export type ComparisonView = {
   beats: { matched: number; total: number };
   /** rateRatio > 1 means the user spoke more slowly than the reference. */
   pace: { rateRatio: number; userWps: number | null; referenceWps: number | null };
-  feedback: { positive: string; primary: string | null; secondary: string | null; next: string };
+  /** source/model are missing on results saved before feedback models existed. */
+  feedback: { positive: string; primary: string | null; secondary: string | null; next: string; source?: "template" | "audio" | "llm"; model?: string | null };
   categories: { name: string; verdict: string; comment: string }[];
 };
 

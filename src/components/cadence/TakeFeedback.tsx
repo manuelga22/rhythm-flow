@@ -109,6 +109,11 @@ function ComparisonDetails({ result }: { result: ComparisonView }) {
           </li>
         ))}
       </ul>
+      {feedback.source && (
+        <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+          {feedback.source === "audio" && feedback.model ? `Feedback by ${feedback.model} · listened to your take` : "Standard feedback"}
+        </p>
+      )}
       <ul className="divide-y divide-ink/10 rounded-xl border border-ink/10">
         {categories.map((category) => {
           const ok = category.verdict === "Good";

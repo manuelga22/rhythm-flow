@@ -103,6 +103,9 @@ def to_comparison_view(comparison: Comparison) -> dict[str, Any]:
             "primary": feedback.primary_issue,
             "secondary": feedback.secondary_issue,
             "next": feedback.next_attempt,
+            # "template" or "audio"; model is the label shown to the learner.
+            "source": feedback.source,
+            "model": feedback.model,
         },
         "categories": [
             {"name": category.name, "verdict": category.verdict, "comment": category.comment}

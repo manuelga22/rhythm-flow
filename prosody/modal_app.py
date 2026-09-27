@@ -43,7 +43,9 @@ image = (
     # the executable on PATH.
     .pip_install("deno", "fastapi[standard]")
     .run_function(download_model)
-    .add_local_python_source("prosody_coach", "prosody_worker")
+    # The default ignore drops non-Python files, which would leave out the
+    # editable feedback prompt (prosody_coach/prompts/*.md).
+    .add_local_python_source("prosody_coach", "prosody_worker", ignore=["**/__pycache__"])
 )
 
 with image.imports():

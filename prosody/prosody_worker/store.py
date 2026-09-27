@@ -33,7 +33,7 @@ class AnalysisStore(Protocol):
 
     def fail(self, row_id: str, message: str) -> None: ...
 
-    def upload_audio(self, path: str, data: bytes) -> None: ...
+    def upload_audio(self, path: str, data: bytes, content_type: str = "audio/wav", upsert: bool = False) -> None: ...
 
     def upsert_ready(self, fields: Row) -> Row: ...
 
@@ -43,9 +43,11 @@ class AttemptStore(Protocol):
 
     def claim_attempt(self, row: Row) -> bool: ...
 
-    def fetch_reference(self, analysis_id: str) -> dict[str, Any] | None: ...
+    def fetch_reference(self, analysis_id: str) -> Row | None: ...
 
     def download_attempt_audio(self, path: str) -> bytes: ...
+
+    def download_clip(self, path: str) -> bytes: ...
 
     def complete_attempt(self, row_id: str, fields: Row) -> None: ...
 
@@ -129,12 +131,13 @@ class SupabaseStore:
     def _fail(self, table: str, row_id: str, message: str) -> None:
         self._table(table).update({"status": "failed", "error": message[:500]}).eq("id", row_id).execute()
 
-    def upload_audio(self, path: str, data: bytes) -> None:
-        """Store reference audio. Paths are content-addressed, so an object
-        that already exists holds these exact bytes and is left alone."""
+    def upload_audio(self, path: str, data: bytes, content_type: str = "audio/wav", upsert: bool = False) -> None:
+        """Store reference audio. Upload paths are content-addressed, so an
+        object that already exists holds these exact bytes and is left
+        alone. Listening clips are keyed by analysis id and are replaced."""
         try:
             self._client.storage.from_(AUDIO_BUCKET).upload(
-                path, data, {"content-type": "audio/wav", "upsert": "false"}
+                path, data, {"content-type": content_type, "upsert": "true" if upsert else "false"}
             )
         except Exception as exc:  # storage client raises its own error types
             if not re.search(r"exists|duplicate", str(exc), re.IGNORECASE):
@@ -156,16 +159,24 @@ class SupabaseStore:
 
     def fetch_pending_attempts(self, analyzer_version: str, limit: int) -> list[Row]:
         return self._fetch_pending(
-            "attempts", "id,analysis_id,phrase_id,audio_path,model_size,attempts", analyzer_version, limit
+            "attempts",
+            "id,analysis_id,phrase_id,audio_path,model_size,attempts,feedback_model,"
+            "feedback_models(provider,model,label)",
+            analyzer_version,
+            limit,
         )
 
     def claim_attempt(self, row: Row) -> bool:
         return self._claim("attempts", row, "Feedback did not finish after several attempts.")
 
-    def fetch_reference(self, analysis_id: str) -> dict[str, Any] | None:
-        response = self._table().select("recording").eq("id", analysis_id).limit(1).execute()
+    def fetch_reference(self, analysis_id: str) -> Row | None:
+        """The reference ``recording`` and its listening ``clip_path``."""
+        response = self._table().select("recording,clip_path").eq("id", analysis_id).limit(1).execute()
         rows = response.data or []
-        return rows[0]["recording"] if rows else None
+        return rows[0] if rows else None
+
+    def download_clip(self, path: str) -> bytes:
+        return self.download_audio(path)
 
     def download_attempt_audio(self, path: str) -> bytes:
         return self._client.storage.from_(ATTEMPT_BUCKET).download(path)

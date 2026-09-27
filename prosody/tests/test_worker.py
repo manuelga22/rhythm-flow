@@ -22,8 +22,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from prosody_coach.analysis import analyze
-from prosody_coach.audio import load_audio
-from prosody_coach.models import PitchMovement, Prominence, Recording
+from prosody_coach.audio import encode_clip, load_audio
+from prosody_coach.models import Feedback, PitchMovement, Prominence, Recording
 from prosody_coach.transcribe import TimedWord, TranscriptionError
 from prosody_worker.attempts import NO_SPEECH, process_attempt, reference_excerpt
 from prosody_worker.importer import import_analysis, load_recording
@@ -66,6 +66,7 @@ class FakeStore:
         self.completed: dict[str, dict] = {}
         self.failed: dict[str, str] = {}
         self.uploaded: dict[str, bytes] = {}
+        self.content_types: dict[str, str] = {}
         self.upserted: list[dict] = []
 
     def fetch_pending(self, analyzer_version, limit):
@@ -85,8 +86,9 @@ class FakeStore:
     def fail(self, row_id, message):
         self.failed[row_id] = message
 
-    def upload_audio(self, path, data):
+    def upload_audio(self, path, data, content_type="audio/wav", upsert=False):
         self.uploaded[path] = data
+        self.content_types[path] = content_type
 
     def upsert_ready(self, fields):
         row = {"id": f"row-{len(self.upserted) + 1}", **fields, "status": "ready"}
@@ -104,6 +106,9 @@ class FakeStore:
         return self.references.get(analysis_id)
 
     def download_attempt_audio(self, path):
+        return self.download_audio(path)
+
+    def download_clip(self, path):
         return self.download_audio(path)
 
     def complete_attempt(self, row_id, fields):
@@ -319,6 +324,35 @@ def test_upload_job_completes_with_view():
         assert column in fields, column
 
 
+def test_job_stores_a_listening_clip():
+    path, _ = _reference_wav()
+    data = path.read_bytes()
+    row = _upload_row(data)
+    store = FakeStore({row["audio_path"]: data})
+
+    process(row, store, analyze=_fake_analyze)
+
+    assert store.completed["row-1"]["clip_path"] == "clips/row-1.ogg"
+    assert store.content_types["clips/row-1.ogg"] == "audio/ogg"
+    assert store.uploaded["clips/row-1.ogg"][:4] == b"OggS"
+
+
+def test_clip_failure_still_completes_the_analysis():
+    path, _ = _reference_wav()
+    data = path.read_bytes()
+    row = _upload_row(data)
+    store = FakeStore({row["audio_path"]: data})
+
+    def broken_upload(*args, **kwargs):
+        raise RuntimeError("storage down")
+
+    store.upload_audio = broken_upload
+    process(row, store, analyze=_fake_analyze)
+
+    assert not store.failed
+    assert store.completed["row-1"]["clip_path"] is None
+
+
 def test_upload_job_rejects_hash_mismatch():
     path, _ = _reference_wav()
     data = path.read_bytes()
@@ -436,7 +470,10 @@ def _attempt(utterance: synth.SynthUtterance, phrase_id: int | None = None) -> t
         "model_size": "tiny",
     }
     store = FakeStore({row["audio_path"]: take_path.read_bytes()})
-    store.references["analysis-1"] = _fake_analyze(ref_path, "reference", None).to_dict()
+    store.references["analysis-1"] = {
+        "recording": _fake_analyze(ref_path, "reference", None).to_dict(),
+        "clip_path": None,
+    }
     return row, store
 
 
@@ -540,6 +577,87 @@ def test_unexpected_attempt_error_marks_failed_and_reraises():
     else:
         raise AssertionError("expected the ValueError to propagate")
     assert "Unexpected" in store.failed_attempts["attempt-1"]
+
+
+GEMINI_CHOICE = {"provider": "gemini", "model": "gemini-3.1-flash-lite", "label": "Gemini Flash-Lite"}
+
+
+def _listening_attempt(clip: bool = True) -> tuple[dict, FakeStore]:
+    row, store = _attempt(synth.good_user_utterance())
+    row["feedback_model"] = "gemini-flash-lite"
+    row["feedback_models"] = dict(GEMINI_CHOICE)
+    if clip:
+        ref_path, _ = _reference_wav()
+        store.audio["clips/analysis-1.ogg"] = encode_clip(ref_path, _TMP / "ref_clip.ogg").read_bytes()
+        store.references["analysis-1"]["clip_path"] = "clips/analysis-1.ogg"
+    return row, store
+
+
+def _spy_listener(calls: list[dict]):
+    def listen(comparison, take, reference, model, label=None):
+        calls.append({
+            "take": take.read_bytes()[:4],
+            "reference": None if reference is None else load_audio(reference).duration,
+            "model": model,
+        })
+        return Feedback(
+            positive="You landed THOUGHT.", primary_issue="Rush less.", secondary_issue=None,
+            next_attempt="Lean into QUICK.", categories=comparison.feedback.categories,
+            source="audio", model=label,
+        )
+    return listen
+
+
+def test_listening_model_hears_take_and_reference_phrase():
+    row, store = _listening_attempt()
+    calls: list[dict] = []
+
+    process_attempt(row, store, analyze=_synth_analyzer(synth.good_user_utterance()), listen=_spy_listener(calls))
+
+    assert calls and calls[0]["model"] == "gemini-3.1-flash-lite"
+    assert calls[0]["take"] == b"OggS"
+    ref_duration = load_audio(_reference_wav()[0]).duration
+    assert 0 < calls[0]["reference"] <= ref_duration + 0.1
+    feedback = store.completed_attempts["attempt-1"]["result"]["feedback"]
+    assert feedback["source"] == "audio"
+    assert feedback["model"] == "Gemini Flash-Lite"
+    assert feedback["positive"] == "You landed THOUGHT."
+
+
+def test_reference_without_clip_sends_the_take_only():
+    row, store = _listening_attempt(clip=False)
+    calls: list[dict] = []
+
+    process_attempt(row, store, analyze=_synth_analyzer(synth.good_user_utterance()), listen=_spy_listener(calls))
+
+    assert calls[0]["reference"] is None
+    assert store.completed_attempts["attempt-1"]["result"]["feedback"]["source"] == "audio"
+
+
+def test_listener_failure_keeps_template_feedback():
+    row, store = _listening_attempt()
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("Gemini returned HTTP 429")
+
+    process_attempt(row, store, analyze=_synth_analyzer(synth.good_user_utterance()), listen=broken)
+
+    result = store.completed_attempts["attempt-1"]["result"]
+    assert result["feedback"]["source"] == "template"
+    assert result["feedback"]["model"] is None
+    assert result["feedback"]["positive"]
+    assert not any("429" in category["comment"] for category in result["categories"])
+
+
+def test_standard_model_does_not_listen():
+    row, store = _listening_attempt()
+    row["feedback_models"] = {"provider": "template", "model": None, "label": "Standard"}
+    calls: list[dict] = []
+
+    process_attempt(row, store, analyze=_synth_analyzer(synth.good_user_utterance()), listen=_spy_listener(calls))
+
+    assert not calls
+    assert store.completed_attempts["attempt-1"]["result"]["feedback"]["source"] == "template"
 
 
 def test_take_keeps_its_extension_for_decoding():

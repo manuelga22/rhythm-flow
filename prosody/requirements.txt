@@ -12,6 +12,9 @@ faster-whisper>=1.0.0
 # faster-whisper dependency; listed because prosody_coach imports it directly.
 av>=12
 
+# Gemini feedback that listens to the audio (prosody_coach/listen.py).
+httpx>=0.27
+
 # Optional: only needed for `--llm` feedback wording.
 # Everything works offline without it.
 anthropic>=0.40.0

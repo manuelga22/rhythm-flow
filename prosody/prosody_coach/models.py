@@ -304,7 +304,8 @@ class Feedback:
     secondary_issue: str | None
     next_attempt: str
     categories: list[CategoryVerdict] = field(default_factory=list)
-    source: str = "template"   # "template" or "llm"
+    source: str = "template"   # "template", "llm" or "audio"
+    model: str | None = None   # the model that wrote it, when not templates
 
 
 @dataclass
