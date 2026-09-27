@@ -296,10 +296,19 @@ def render_report(comparison: Comparison, style: Style, verbose: bool = False) -
     lines.append(f"  {style.green('Good:')} {feedback.positive}")
     if feedback.primary_issue:
         lines.append(f"  {style.yellow('Work on:')} {feedback.primary_issue}")
+        if feedback.primary_example:
+            lines.append(f"      {feedback.primary_example}")
     if feedback.secondary_issue:
         lines.append(f"  {style.yellow('Also:')} {feedback.secondary_issue}")
+        if feedback.secondary_example:
+            lines.append(f"      {feedback.secondary_example}")
     lines.append(f"  {style.bold_cyan('Try next:')} {feedback.next_attempt}")
     lines.append("")
+
+    if feedback.details:
+        lines.append(style.cyan("COACHING NOTES"))
+        lines.extend(f"  {line}" if line else "" for line in feedback.details.splitlines())
+        lines.append("")
 
     if feedback.categories:
         lines.append(style.cyan("BREAKDOWN"))

@@ -303,6 +303,10 @@ class Feedback:
     primary_issue: str | None
     secondary_issue: str | None
     next_attempt: str
+    # Only feedback from a model that listens fills these in.
+    primary_example: str | None = None     # REF/YOU contrast for primary_issue
+    secondary_example: str | None = None   # REF/YOU contrast for secondary_issue
+    details: str | None = None             # longer coaching notes, Markdown
     categories: list[CategoryVerdict] = field(default_factory=list)
     source: str = "template"   # "template", "llm" or "audio"
     model: str | None = None   # the model that wrote it, when not templates

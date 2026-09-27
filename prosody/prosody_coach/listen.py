@@ -30,10 +30,18 @@ OUTPUT_FORMAT = """\
 ## Reply format
 
 Respond with a JSON object containing exactly these keys:
-  "positive"        - one specific thing the learner did well, citing a real word
-  "primary_issue"   - the most important correction, or null if none
-  "secondary_issue" - a second correction, or null
-  "next_attempt"    - one concrete instruction for the next take
+  "positive"          - one specific thing the learner did well, citing a real word
+  "primary_issue"     - the most important correction, or null if none
+  "primary_example"   - a one-line contrast showing primary_issue, such as
+                        "REF: I SAID it was GREAT / YOU: I said IT was great", or null
+  "secondary_issue"   - a second correction, or null
+  "secondary_example" - a one-line contrast showing secondary_issue, or null
+  "next_attempt"      - one concrete instruction for the next take
+  "details"           - fuller coaching notes in Markdown (short paragraphs or
+                        bullets, with examples), or null if there is nothing to add
+
+"positive", "primary_issue", "secondary_issue" and "next_attempt" are a short
+summary: one or two sentences each, plain text, no Markdown.
 """
 
 MIME_TYPES = {
@@ -109,15 +117,28 @@ def listen_feedback(
 
     data = _parse_json_object(_response_text(response.json()))
     fallback = comparison.feedback
+    primary = _text_or_none(data.get("primary_issue"))
+    secondary = _text_or_none(data.get("secondary_issue"))
     return Feedback(
-        positive=str(data.get("positive") or fallback.positive),
-        primary_issue=data.get("primary_issue") or None,
-        secondary_issue=data.get("secondary_issue") or None,
-        next_attempt=str(data.get("next_attempt") or fallback.next_attempt),
+        positive=_text_or_none(data.get("positive")) or fallback.positive,
+        primary_issue=primary,
+        secondary_issue=secondary,
+        next_attempt=_text_or_none(data.get("next_attempt")) or fallback.next_attempt,
+        # An example without its correction would have nothing to illustrate.
+        primary_example=_text_or_none(data.get("primary_example")) if primary else None,
+        secondary_example=_text_or_none(data.get("secondary_example")) if secondary else None,
+        details=_text_or_none(data.get("details")),
         categories=fallback.categories,
         source="audio",
         model=label or model,
     )
+
+
+def _text_or_none(value: object) -> str | None:
+    """A non-empty string from the reply, else None."""
+    if not isinstance(value, str):
+        return None
+    return value.strip() or None
 
 
 def _audio_part(path: Path) -> dict:

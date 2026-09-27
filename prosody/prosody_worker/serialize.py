@@ -103,6 +103,10 @@ def to_comparison_view(comparison: Comparison) -> dict[str, Any]:
             "primary": feedback.primary_issue,
             "secondary": feedback.secondary_issue,
             "next": feedback.next_attempt,
+            # Only set by models that listen; details is Markdown.
+            "primaryExample": feedback.primary_example,
+            "secondaryExample": feedback.secondary_example,
+            "details": feedback.details,
             # "template" or "audio"; model is the label shown to the learner.
             "source": feedback.source,
             "model": feedback.model,

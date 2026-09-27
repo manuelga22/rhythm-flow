@@ -31,7 +31,7 @@ Base your points on the measurements. Use what you hear to confirm them and to d
 ## How to write
 
 - Be direct, specific and encouraging. No generic praise such as "great job".
-- Keep each part to one or two sentences.
+- Keep the summary short; put the fuller explanation and extra examples in the details.
 - Write stressed words in CAPS, for example "lean into QUICK".
 - Talk to the learner as "you".
 - Always show examples together with the critique.

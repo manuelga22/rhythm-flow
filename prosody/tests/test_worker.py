@@ -602,7 +602,8 @@ def _spy_listener(calls: list[dict]):
         })
         return Feedback(
             positive="You landed THOUGHT.", primary_issue="Rush less.", secondary_issue=None,
-            next_attempt="Lean into QUICK.", categories=comparison.feedback.categories,
+            next_attempt="Lean into QUICK.", primary_example="REF: QUICK / YOU: quick",
+            details="- Keep IT light.", categories=comparison.feedback.categories,
             source="audio", model=label,
         )
     return listen
@@ -622,6 +623,9 @@ def test_listening_model_hears_take_and_reference_phrase():
     assert feedback["source"] == "audio"
     assert feedback["model"] == "Gemini Flash-Lite"
     assert feedback["positive"] == "You landed THOUGHT."
+    assert feedback["primaryExample"] == "REF: QUICK / YOU: quick"
+    assert feedback["secondaryExample"] is None
+    assert feedback["details"] == "- Keep IT light."
 
 
 def test_reference_without_clip_sends_the_take_only():
@@ -646,6 +650,8 @@ def test_listener_failure_keeps_template_feedback():
     assert result["feedback"]["source"] == "template"
     assert result["feedback"]["model"] is None
     assert result["feedback"]["positive"]
+    assert result["feedback"]["primaryExample"] is None
+    assert result["feedback"]["details"] is None
     assert not any("429" in category["comment"] for category in result["categories"])
 
 

@@ -504,16 +504,22 @@ class _FakeResponse:
 
 
 @contextmanager
-def _gemini(status_code: int = 200, body: dict | None = None, key: str | None = "test-key"):
-    """Stub httpx.post and GEMINI_API_KEY; yields the captured requests."""
+def _gemini(status_code: int = 200, body: dict | None = None, key: str | None = "test-key", reply: dict | None = None):
+    """Stub httpx.post and GEMINI_API_KEY; yields the captured requests.
+
+    ``reply`` overrides keys of the default model answer."""
     import httpx
 
     calls: list[dict] = []
     reply = {
         "positive": "You landed THOUGHT.",
         "primary_issue": "You gave IT a beat.",
+        "primary_example": "REF: I SAID it / YOU: I said IT",
         "secondary_issue": None,
+        "secondary_example": "REF: QUICK / YOU: quick",
         "next_attempt": "Lean into QUICK.",
+        "details": "- Keep **IT** light.\n- Land SAID.",
+        **(reply or {}),
     }
     body = body if body is not None else {"candidates": [{"content": {"parts": [{"text": json.dumps(reply)}]}}]}
 
@@ -552,7 +558,10 @@ def test_listen_prompt_is_the_markdown_file_plus_reply_format():
 
     assert prompt.startswith(listen.PROMPT_PATH.read_text(encoding="utf-8").strip())
     assert prompt.rstrip().endswith(listen.OUTPUT_FORMAT.rstrip())
-    for key in ("positive", "primary_issue", "secondary_issue", "next_attempt"):
+    for key in (
+        "positive", "primary_issue", "primary_example", "secondary_issue", "secondary_example",
+        "next_attempt", "details",
+    ):
         assert f'"{key}"' in prompt
 
 
@@ -580,6 +589,23 @@ def test_listen_sends_both_clips_and_the_measurements():
     assert feedback.positive == "You landed THOUGHT."
     assert feedback.secondary_issue is None
     assert feedback.categories == comparison.feedback.categories
+    assert feedback.primary_example == "REF: I SAID it / YOU: I said IT"
+    assert feedback.secondary_example is None, "an example without its issue is dropped"
+    assert feedback.details == "- Keep **IT** light.\n- Land SAID."
+
+
+def test_listen_blank_or_odd_values_become_none_or_templates():
+    _, take = _clips()
+    comparison = build_comparison(reference(), flat_user())
+    blank = {"positive": "  ", "details": "   ", "primary_example": 3, "next_attempt": None}
+
+    with _gemini(reply=blank):
+        feedback = listen.listen_feedback(comparison, take, None, "gemini-3.1-flash-lite")
+
+    assert feedback.positive == comparison.feedback.positive
+    assert feedback.next_attempt == comparison.feedback.next_attempt
+    assert feedback.details is None
+    assert feedback.primary_example is None
 
 
 def test_listen_without_reference_says_so():

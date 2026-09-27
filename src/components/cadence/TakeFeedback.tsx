@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { Check, ChevronDown, CircleAlert, LoaderCircle, Pause, Play, RotateCcw } from "lucide-react";
+import Markdown from "react-markdown";
 import { Button } from "@/components/ui/button";
 import type { TakeEntry } from "@/hooks/use-take-history";
 import type { ComparisonView, WordFlag } from "@/lib/attempts";
@@ -85,14 +86,16 @@ function pace(rateRatio: number): { value: string; suffix: string } {
 
 function ComparisonDetails({ result }: { result: ComparisonView }) {
   const { beats, feedback, categories } = result;
+  const [full, setFull] = useState(false);
   const good = categories.filter((category) => category.verdict === "Good").length;
   const speed = pace(result.pace.rateRatio);
-  const notes: [string, string | null, string][] = [
-    ["Good", feedback.positive, "text-accent"],
-    ["Work on", feedback.primary, "text-caution"],
-    ["Also", feedback.secondary, "text-caution"],
-    ["Try next", feedback.next, "text-primary"],
+  const notes: [string, string | null, string, string | null | undefined][] = [
+    ["Good", feedback.positive, "text-accent", null],
+    ["Work on", feedback.primary, "text-caution", feedback.primaryExample],
+    ["Also", feedback.secondary, "text-caution", feedback.secondaryExample],
+    ["Try next", feedback.next, "text-primary", null],
   ];
+  const hasMore = Boolean(feedback.primaryExample || feedback.secondaryExample || feedback.details);
   return (
     <>
       <div className="grid grid-cols-3 gap-2">
@@ -102,13 +105,25 @@ function ComparisonDetails({ result }: { result: ComparisonView }) {
       </div>
       <ComparisonLine result={result} />
       <ul className="space-y-3">
-        {notes.filter(([, text]) => text).map(([label, text, tone]) => (
+        {notes.filter(([, text]) => text).map(([label, text, tone, example]) => (
           <li key={label} className="grid grid-cols-[4.5rem_1fr] gap-2 text-sm leading-relaxed">
             <span className={`pt-0.5 font-mono text-[10px] uppercase tracking-widest ${tone}`}>{label}</span>
-            <p>{text}</p>
+            <div className="min-w-0">
+              <p>{text}</p>
+              {full && example && <p className="mt-1.5 rounded-lg bg-ink/5 px-2.5 py-1.5 font-mono text-xs leading-relaxed text-muted-foreground">{example}</p>}
+            </div>
           </li>
         ))}
       </ul>
+      {hasMore && (
+        <div className="space-y-3">
+          <button type="button" onClick={() => setFull((open) => !open)} aria-expanded={full} className="flex items-center gap-1.5 rounded font-mono text-[10px] uppercase tracking-widest text-primary outline-none hover:underline focus-visible:ring-2 focus-visible:ring-primary/60">
+            {full ? "Hide full feedback" : "Show full feedback"}
+            <ChevronDown className={`size-3.5 transition-transform ${full ? "rotate-180" : ""}`} />
+          </button>
+          {full && feedback.details && <FeedbackDetails markdown={feedback.details} />}
+        </div>
+      )}
       {feedback.source && (
         <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
           {feedback.source === "audio" && feedback.model ? `Feedback by ${feedback.model} · listened to your take` : "Standard feedback"}
@@ -126,6 +141,29 @@ function ComparisonDetails({ result }: { result: ComparisonView }) {
         })}
       </ul>
     </>
+  );
+}
+
+/** The model's longer coaching notes. Raw HTML in the Markdown is not rendered. */
+function FeedbackDetails({ markdown }: { markdown: string }) {
+  return (
+    <div className="space-y-2 rounded-xl border border-ink/10 p-4 text-sm leading-relaxed animate-in fade-in duration-200">
+      <Markdown
+        components={{
+          h1: ({ children }) => <p className="font-semibold">{children}</p>,
+          h2: ({ children }) => <p className="font-semibold">{children}</p>,
+          h3: ({ children }) => <p className="font-semibold">{children}</p>,
+          ul: ({ children }) => <ul className="list-disc space-y-1 pl-5">{children}</ul>,
+          ol: ({ children }) => <ol className="list-decimal space-y-1 pl-5">{children}</ol>,
+          strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+          code: ({ children }) => <code className="rounded bg-ink/5 px-1 font-mono text-xs">{children}</code>,
+          a: ({ children }) => <span>{children}</span>,
+          img: () => null,
+        }}
+      >
+        {markdown}
+      </Markdown>
+    </div>
   );
 }
 
