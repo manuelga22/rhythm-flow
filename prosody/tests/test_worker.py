@@ -26,6 +26,7 @@ from prosody_coach.audio import encode_clip, load_audio
 from prosody_coach.models import Feedback, PitchMovement, Prominence, Recording
 from prosody_coach.transcribe import TimedWord, TranscriptionError
 from prosody_worker.attempts import NO_SPEECH, process_attempt, reference_excerpt
+from prosody_worker.generate import GeneratedClip
 from prosody_worker.importer import import_analysis, load_recording
 from prosody_worker.jobs import process
 from prosody_worker.main import poll
@@ -89,6 +90,9 @@ class FakeStore:
     def upload_audio(self, path, data, content_type="audio/wav", upsert=False):
         self.uploaded[path] = data
         self.content_types[path] = content_type
+
+    def save_generation(self, row_id, generation):
+        pass
 
     def upsert_ready(self, fields):
         row = {"id": f"row-{len(self.upserted) + 1}", **fields, "status": "ready"}
@@ -410,6 +414,57 @@ def test_youtube_source_error_marks_failed():
     process(row, store, analyze=_fake_analyze, fetch_youtube=fetch)
 
     assert store.failed["yt"] == "Video is 45 min long"
+
+
+GENERATION = {
+    "movie": "Casablanca", "title": "Last Train Out · Inspired by Casablanca",
+    "script": "…", "voice_id": "v1", "voice_name": "Brian",
+}
+
+
+def _generated_row(**extra) -> dict:
+    return {
+        "id": "gen", "source_type": "generated", "source_key": "generated:abc",
+        "audio_path": "generated/abc.mp3", "model_size": "tiny", **extra,
+    }
+
+
+def test_generated_job_stores_the_clip_then_analyses_it():
+    path, _ = _reference_wav()
+    store = FakeStore()
+    saved = {}
+    store.save_generation = lambda row_id, generation: saved.update({row_id: generation})
+
+    process(_generated_row(), store, analyze=_fake_analyze, generate=lambda dest: GeneratedClip(path, dict(GENERATION)))
+
+    assert store.uploaded["generated/abc.mp3"] == path.read_bytes()
+    assert store.content_types["generated/abc.mp3"] == "audio/mpeg"
+    assert saved["gen"]["voice_name"] == "Brian"
+    assert store.completed["gen"]["title"] == GENERATION["title"]
+    assert store.completed["gen"]["view"]["title"] == GENERATION["title"]
+
+
+def test_retried_generated_job_reuses_the_stored_clip():
+    path, _ = _reference_wav()
+    store = FakeStore(audio={"generated/abc.mp3": path.read_bytes()})
+
+    def generate(dest):
+        raise AssertionError("a stored clip must not be paid for again")
+
+    process(_generated_row(generation=GENERATION), store, analyze=_fake_analyze, generate=generate)
+
+    assert store.completed["gen"]["title"] == GENERATION["title"]
+    assert not store.uploaded.get("generated/abc.mp3")
+
+
+def test_generation_error_marks_failed():
+    def generate(dest):
+        raise SourceError("Couldn't create a clip right now. Try again.")
+
+    store = FakeStore()
+    process(_generated_row(), store, analyze=_fake_analyze, generate=generate)
+
+    assert store.failed["gen"] == "Couldn't create a clip right now. Try again."
 
 
 def test_transcription_error_marks_failed():

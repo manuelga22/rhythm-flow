@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
-import { ChevronRight, FileAudio, Link2 } from "lucide-react";
+import { ChevronRight, FileAudio, Link2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/use-auth";
@@ -8,7 +8,10 @@ import { sessionsKey } from "@/hooks/use-practice-session";
 import { listSessions, type PracticeSession } from "@/lib/sessions";
 import { SignInPrompt } from "./SignInPrompt";
 
-const sessionTitle = (session: PracticeSession) => session.title ?? (session.sourceType === "youtube" ? "YouTube video" : "Uploaded clip");
+const SOURCE_LABEL = { youtube: "YouTube video", upload: "Uploaded clip", generated: "AI clip" } as const;
+const SOURCE_ICON = { youtube: Link2, upload: FileAudio, generated: Sparkles } as const;
+
+const sessionTitle = (session: PracticeSession) => session.title ?? SOURCE_LABEL[session.sourceType];
 
 /** The Continue tab of the Source step: the signed-in user's saved sessions, most recent first. */
 export function ContinueSessions({ className = "", prompt, onResume, onNew }: { className?: string; prompt: { title: string; body: string }; onResume: (session: PracticeSession) => void; onNew: () => void }) {
@@ -51,7 +54,7 @@ export function ContinueSessions({ className = "", prompt, onResume, onNew }: { 
   return (
     <ul className={`grid gap-2 ${className}`} aria-label="Saved sessions">
       {sessions.data.map((session) => {
-        const Icon = session.sourceType === "youtube" ? Link2 : FileAudio;
+        const Icon = SOURCE_ICON[session.sourceType];
         return (
           <li key={session.id}>
             <button type="button" onClick={() => onResume(session)} className="grid w-full cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border border-ink/10 bg-card p-4 text-left transition-colors hover:border-ink/30">

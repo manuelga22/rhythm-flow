@@ -9,7 +9,8 @@ Nothing runs, and nothing is billed, while the queues are empty.
 Deploy from this directory:
 
     modal secret create prosody-worker SUPABASE_URL=... \
-        SUPABASE_SERVICE_ROLE_KEY=... WORKER_WEBHOOK_TOKEN=...
+        SUPABASE_SERVICE_ROLE_KEY=... WORKER_WEBHOOK_TOKEN=... \
+        GEMINI_API_KEY=... ELEVENLABS_API_KEY=...
     modal deploy modal_app.py
 
 Local development is unchanged: ``python -m prosody_worker`` still polls.
@@ -44,7 +45,7 @@ image = (
     .pip_install("deno", "fastapi[standard]")
     .run_function(download_model)
     # The default ignore drops non-Python files, which would leave out the
-    # editable feedback prompt (prosody_coach/prompts/*.md).
+    # editable prompts (prosody_coach/prompts/*.md, prosody_worker/prompts/*.md).
     .add_local_python_source("prosody_coach", "prosody_worker", ignore=["**/__pycache__"])
 )
 

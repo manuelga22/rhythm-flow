@@ -37,6 +37,11 @@ MAX_SOURCE_SECONDS = 10 * 60
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 MAX_ATTEMPT_BYTES = 10 * 1024 * 1024
 
+# Generated clips: Gemini writes the script, ElevenLabs (ELEVENLABS_API_KEY)
+# voices it. See prosody_worker/generate.py.
+SCRIPT_MODEL = os.environ.get("PROSODY_SCRIPT_MODEL", "gemini-3.1-flash-lite")
+TTS_MODEL = os.environ.get("PROSODY_TTS_MODEL", "eleven_multilingual_v2")
+
 # A claimed row that has not finished within this window is assumed to
 # belong to a crashed worker and becomes claimable again.
 CLAIM_TIMEOUT_SECONDS = 15 * 60

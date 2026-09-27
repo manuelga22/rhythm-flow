@@ -18,7 +18,8 @@ function AccentPhrase({ phrase }: { phrase: PracticePhrase }) {
   );
 }
 
-export function BreakdownScreen({ status, error, title, phrases, clipSource, selectedPhrase, setSelectedPhrase, onBack, onContinue }: { status: AnalysisStatus | "idle"; error: string | null; title: string; phrases: PracticePhrase[]; clipSource: ClipSource; selectedPhrase: PracticePhrase | null; setSelectedPhrase: (phrase: PracticePhrase | null) => void; onBack: () => void; onContinue: () => void }) {
+/** `generated` is set for AI clips; `voice` is the ElevenLabs voice once the clip exists. */
+export function BreakdownScreen({ status, error, title, phrases, clipSource, generated, selectedPhrase, setSelectedPhrase, onBack, onContinue }: { status: AnalysisStatus | "idle"; error: string | null; title: string; phrases: PracticePhrase[]; clipSource: ClipSource; generated?: { voice: string | null } | null; selectedPhrase: PracticePhrase | null; setSelectedPhrase: (phrase: PracticePhrase | null) => void; onBack: () => void; onContinue: () => void }) {
   const youtubeMount = useRef<HTMLDivElement | null>(null);
   // Hold the source back until the phrases (and the YouTube mount) render.
   const player = useClipPlayer(status === "ready" ? clipSource : null, youtubeMount);
@@ -90,8 +91,17 @@ export function BreakdownScreen({ status, error, title, phrases, clipSource, sel
       <main className="device-column grid min-h-[70vh] place-items-center px-5 pb-28 pt-6">
         <div className="text-center" aria-live="polite">
           <LoaderCircle className="mx-auto size-8 animate-spin text-primary" />
-          <h1 className="mt-5 font-display text-4xl">FINDING THE RHYTHM.</h1>
-          <p className="mt-2 text-sm text-muted-foreground">Breaking the clip into phrases, pauses, and pitch movements. Longer clips can take a minute.</p>
+          {generated ? (
+            <>
+              <h1 className="mt-5 font-display text-4xl">WRITING YOUR SCENE.</h1>
+              <p className="mt-2 text-sm text-muted-foreground">Writing a scene inspired by a well-known movie, voicing it with ElevenLabs, then finding its rhythm. This takes about a minute.</p>
+            </>
+          ) : (
+            <>
+              <h1 className="mt-5 font-display text-4xl">FINDING THE RHYTHM.</h1>
+              <p className="mt-2 text-sm text-muted-foreground">Breaking the clip into phrases, pauses, and pitch movements. Longer clips can take a minute.</p>
+            </>
+          )}
         </div>
       </main>
     );
@@ -114,7 +124,11 @@ export function BreakdownScreen({ status, error, title, phrases, clipSource, sel
           </Button>
           <div className="min-w-0 flex-1">
             <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0"><p className="font-mono text-[9px] uppercase tracking-widest text-background/50">Full reference</p><p className="truncate text-sm font-semibold">{title}</p></div>
+              <div className="min-w-0">
+                <p className="font-mono text-[9px] uppercase tracking-widest text-background/50">Full reference</p>
+                <p className="truncate text-sm font-semibold">{title}</p>
+                {generated && <p className="truncate font-mono text-[9px] uppercase tracking-widest text-primary">AI voice{generated.voice ? ` · ${generated.voice}` : ""} · Powered by ElevenLabs</p>}
+              </div>
               <span className="shrink-0 font-mono text-[10px] tabular-nums text-background/60">{formatTime(elapsed)} / {formatTime(totalSeconds)}</span>
             </div>
             <div

@@ -35,6 +35,8 @@ class AnalysisStore(Protocol):
 
     def upload_audio(self, path: str, data: bytes, content_type: str = "audio/wav", upsert: bool = False) -> None: ...
 
+    def save_generation(self, row_id: str, generation: Row) -> None: ...
+
     def upsert_ready(self, fields: Row) -> Row: ...
 
 
@@ -73,7 +75,8 @@ class SupabaseStore:
 
     def fetch_pending(self, analyzer_version: str, limit: int) -> list[Row]:
         return self._fetch_pending(
-            "analyses", "id,source_type,source_key,title,model_size,audio_path,attempts", analyzer_version, limit
+            "analyses", "id,source_type,source_key,title,model_size,audio_path,generation,attempts",
+            analyzer_version, limit,
         )
 
     def _fetch_pending(self, table: str, columns: str, analyzer_version: str, limit: int) -> list[Row]:
@@ -142,6 +145,10 @@ class SupabaseStore:
         except Exception as exc:  # storage client raises its own error types
             if not re.search(r"exists|duplicate", str(exc), re.IGNORECASE):
                 raise
+
+    def save_generation(self, row_id: str, generation: Row) -> None:
+        """Record a generated clip whose audio is stored, so a retry reuses it."""
+        self._table().update({"generation": generation}).eq("id", row_id).execute()
 
     def upsert_ready(self, fields: Row) -> Row:
         """Insert or overwrite a finished analysis for its source and engine settings."""

@@ -1,4 +1,4 @@
-import { ArrowRight, FileAudio, Link2, LoaderCircle, Play, Upload } from "lucide-react";
+import { ArrowRight, FileAudio, Link2, LoaderCircle, Play, Sparkles, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/use-auth";
@@ -17,15 +17,17 @@ const formatSize = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.max(1, Math
 
 export function SourceScreen({ tab, setTab, mode, setMode, url, setUrl, file, setFile, fileRef, submitError, submitting, onBack, onContinue, onResume }: { tab: SourceTab; setTab: (tab: SourceTab) => void; mode: SourceMode; setMode: (mode: SourceMode) => void; url: string; setUrl: (url: string) => void; file: File | null; setFile: (file: File | null) => void; fileRef: React.RefObject<HTMLInputElement | null>; submitError: string | null; submitting: boolean; onBack: () => void; onContinue: (source: AnalysisSource) => void; onResume: (session: PracticeSession) => void }) {
   const { user, loading } = useAuth();
-  const source: AnalysisSource | null = mode === "youtube" ? { kind: "youtube", url } : file ? { kind: "upload", file } : null;
+  const source: AnalysisSource | null = mode === "generated" ? { kind: "generated" } : mode === "youtube" ? { kind: "youtube", url } : file ? { kind: "upload", file } : null;
   const problem = source ? validateSource(source) : "Choose a WAV file to continue.";
   // Don't nag before the user has typed or picked anything.
   const showProblem = problem && (mode === "youtube" ? url.trim() !== "" : file !== null);
   const videoId = mode === "youtube" ? youtubeId(url) : null;
 
-  const preview = mode === "youtube"
-    ? { title: videoId ? "YouTube video" : "No video yet", detail: videoId ? `ID ${videoId}` : "Paste a link above" }
-    : { title: file?.name ?? "No file yet", detail: file ? `WAV · ${formatSize(file.size)}` : "Choose a WAV file" };
+  const preview = mode === "generated"
+    ? { title: "A new scene inspired by a well-known movie", detail: "AI voice · Powered by ElevenLabs" }
+    : mode === "youtube"
+      ? { title: videoId ? "YouTube video" : "No video yet", detail: videoId ? `ID ${videoId}` : "Paste a link above" }
+      : { title: file?.name ?? "No file yet", detail: file ? `WAV · ${formatSize(file.size)}` : "Choose a WAV file" };
 
   return (
     <main className="device-column px-5 pb-28 pt-6">
@@ -33,7 +35,7 @@ export function SourceScreen({ tab, setTab, mode, setMode, url, setUrl, file, se
       <div className="mt-8 animate-rise">
         <p className="font-mono text-xs uppercase tracking-widest text-primary">01 · Source</p>
         <h1 className="mt-3 font-display text-5xl leading-none">CHOOSE A VOICE.</h1>
-        <p className="mt-3 max-w-xl text-muted-foreground">{tab === "new" ? "Paste a YouTube link or choose a clear WAV recording." : "Pick up a clip you've practiced before."}</p>
+        <p className="mt-3 max-w-xl text-muted-foreground">{tab === "new" ? "Paste a YouTube link, choose a clear WAV recording, or generate a clip with AI." : "Pick up a clip you've practiced before."}</p>
       </div>
       <div role="tablist" aria-label="Practice source" className="mt-6 grid grid-cols-2 rounded-2xl border border-ink/10 bg-card p-1">
         {(["new", "continue"] as const).map((value) => (
@@ -60,6 +62,12 @@ export function SourceScreen({ tab, setTab, mode, setMode, url, setUrl, file, se
               <h2 className="mt-8 font-display text-2xl">UPLOAD AUDIO</h2><p className="mt-1 text-sm text-muted-foreground">Choose a WAV file from your device.</p>
           </div>
         </Button>
+        <Button onClick={() => setMode("generated")} variant="outline" className={`col-span-2 h-auto cursor-pointer flex-col items-stretch justify-start rounded-2xl border p-4 text-left shadow-none transition-colors ${mode === "generated" ? "border-primary bg-primary/5" : "border-ink/15 bg-card hover:border-ink/30"}`}>
+          <div style={{ whiteSpace: 'normal', overflowWrap: 'break-word', width: '100%' }}>
+              <div className="flex items-center justify-between gap-3"><Sparkles className="size-5" /><span className="rounded-full bg-ink px-2.5 py-1 font-mono text-[10px] uppercase tracking-widest text-background">Powered by ElevenLabs</span></div>
+              <h2 className="mt-5 font-display text-2xl">GENERATE WITH AI</h2><p className="mt-1 text-sm text-muted-foreground">A new 30–60 second scene inspired by a well-known movie, voiced by ElevenLabs.</p>
+          </div>
+        </Button>
         <input
           ref={fileRef}
           type="file"
@@ -74,8 +82,10 @@ export function SourceScreen({ tab, setTab, mode, setMode, url, setUrl, file, se
         />
       </div>
       <div className="mt-6 rounded-2xl border border-ink/10 bg-card p-5">
-        <label htmlFor="source" className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">{mode === "youtube" ? "Video URL" : "Selected file"}</label>
-        {mode === "youtube" ? (
+        <label htmlFor="source" className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">{{ youtube: "Video URL", upload: "Selected file", generated: "AI clip" }[mode]}</label>
+        {mode === "generated" ? (
+          <p id="source" className="mt-2 text-sm leading-relaxed">Gemini writes an original monologue inspired by a famous movie scene, and ElevenLabs voices it with a voice that fits the speaker. Every click makes a new clip.</p>
+        ) : mode === "youtube" ? (
           <Input id="source" value={url} placeholder="https://youtube.com/watch?v=…" onChange={(event) => setUrl(event.target.value)} aria-invalid={Boolean(showProblem)} className="mt-2 h-12 rounded-xl border-ink/15 bg-background px-4 font-mono text-xs shadow-none" />
         ) : (
           <Button id="source" type="button" variant="outline" onClick={() => fileRef.current?.click()} className="mt-2 h-12 w-full justify-start rounded-xl border-ink/15 bg-background px-4 font-mono text-xs font-normal shadow-none">
@@ -88,7 +98,9 @@ export function SourceScreen({ tab, setTab, mode, setMode, url, setUrl, file, se
           <div className="min-w-0"><p className="truncate text-sm font-semibold">{preview.title}</p><p className="mt-1 truncate font-mono text-[10px] uppercase tracking-widest text-muted-foreground">{preview.detail}</p></div>
           {submitError && <p className="col-span-2 text-xs text-destructive" role="alert">{submitError}</p>}
           <Button onClick={() => source && onContinue(source)} disabled={Boolean(problem) || submitting} className="col-span-2 mt-2 h-13 w-full rounded-2xl bg-primary text-primary-foreground shadow-none">
-            {submitting ? <><LoaderCircle className="animate-spin" /> Starting analysis</> : <>Analyze this clip <ArrowRight /></>}
+            {submitting
+              ? <><LoaderCircle className="animate-spin" /> {mode === "generated" ? "Starting" : "Starting analysis"}</>
+              : mode === "generated" ? <><Sparkles /> Generate clip</> : <>Analyze this clip <ArrowRight /></>}
           </Button>
         </div>
       </div>

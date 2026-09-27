@@ -15,18 +15,22 @@ export type Analysis = {
   status: AnalysisStatus;
   error: string | null;
   title: string | null;
-  source_type: "youtube" | "upload";
+  source_type: SourceType;
   source_key: string;
   duration_seconds: number | null;
   view: AnalysisView | null;
-  /** Object path of an uploaded clip in the reference-audio bucket. */
+  /** Object path of an uploaded or generated clip in the reference-audio bucket. */
   audio_path: string | null;
+  /** What wrote and voiced a generated clip; null until its audio exists. */
+  generation: { movie: string; title: string; voice_name: string } | null;
 };
 
-export type AnalysisSource = { kind: "youtube"; url: string } | { kind: "upload"; file: File };
+export type SourceType = "youtube" | "upload" | "generated";
+
+export type AnalysisSource = { kind: "youtube"; url: string } | { kind: "upload"; file: File } | { kind: "generated" };
 
 // Everything but the raw `recording` blob, which the UI never needs.
-const COLUMNS = "id,status,error,title,source_type,source_key,duration_seconds,view,audio_path";
+const COLUMNS = "id,status,error,title,source_type,source_key,duration_seconds,view,audio_path,generation";
 const AUDIO_BUCKET = "reference-audio";
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 // Safety net alongside Realtime, which can miss updates while reconnecting.
@@ -60,6 +64,7 @@ export function youtubeId(input: string): string | null {
 
 /** Returns a user-facing problem with the source, or null when it can be analysed. */
 export function validateSource(source: AnalysisSource): string | null {
+  if (source.kind === "generated") return null;
   if (source.kind === "youtube") {
     if (!source.url.trim()) return "Paste a YouTube link to continue.";
     return youtubeId(source.url) ? null : "That doesn't look like a YouTube video link.";
@@ -83,6 +88,13 @@ export async function requestAnalysis(source: AnalysisSource): Promise<Analysis>
   if (problem) throw new Error(problem);
   if (!supabase) {
     throw new Error("Error fetching your rhythm analysis.");
+  }
+
+  // Every generated clip is new, so there is nothing to look up first.
+  if (source.kind === "generated") {
+    const { data, error } = await supabase.rpc("request_generated_analysis").select(COLUMNS).single<Analysis>();
+    if (error) throw new Error(error.message);
+    return data;
   }
 
   const sourceKey = source.kind === "youtube" ? `youtube:${youtubeId(source.url)}` : `upload:${await sha256Hex(source.file)}`;

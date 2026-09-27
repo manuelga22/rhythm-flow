@@ -100,22 +100,7 @@ def listen_feedback(
 
     The template categories are kept: they are measured verdicts, not prose.
     """
-    import httpx
-
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        raise RuntimeError("GEMINI_API_KEY is not set")
-
-    response = httpx.post(
-        GEMINI_URL.format(model=model),
-        headers={"x-goog-api-key": api_key},
-        json=build_request(comparison, take, reference),
-        timeout=TIMEOUT_SECONDS,
-    )
-    if response.status_code != 200:
-        raise RuntimeError(f"Gemini returned HTTP {response.status_code}: {response.text[:300]}")
-
-    data = _parse_json_object(_response_text(response.json()))
+    data = call_gemini(build_request(comparison, take, reference), model)
     fallback = comparison.feedback
     primary = _text_or_none(data.get("primary_issue"))
     secondary = _text_or_none(data.get("secondary_issue"))
@@ -132,6 +117,26 @@ def listen_feedback(
         source="audio",
         model=label or model,
     )
+
+
+def call_gemini(body: dict, model: str, timeout: float = TIMEOUT_SECONDS) -> dict:
+    """POST a generateContent ``body`` to ``model`` and return the JSON
+    object it answers with. Any failure raises RuntimeError."""
+    import httpx
+
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY is not set")
+
+    response = httpx.post(
+        GEMINI_URL.format(model=model),
+        headers={"x-goog-api-key": api_key},
+        json=body,
+        timeout=timeout,
+    )
+    if response.status_code != 200:
+        raise RuntimeError(f"Gemini returned HTTP {response.status_code}: {response.text[:300]}")
+    return _parse_json_object(_response_text(response.json()))
 
 
 def _text_or_none(value: object) -> str | None:

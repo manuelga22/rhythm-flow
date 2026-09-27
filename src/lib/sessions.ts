@@ -1,3 +1,4 @@
+import type { SourceType } from "@/lib/analysis";
 import type { Attempt } from "@/lib/attempts";
 import { supabase } from "@/lib/supabase";
 
@@ -7,7 +8,7 @@ export type PracticeSession = {
   analysisId: string;
   lastPracticedAt: string;
   title: string | null;
-  sourceType: "youtube" | "upload";
+  sourceType: SourceType;
   sourceKey: string;
   durationSeconds: number | null;
   takeCount: number;
@@ -24,7 +25,7 @@ type SessionRow = {
   id: string;
   analysis_id: string;
   last_practiced_at: string;
-  analysis: { title: string | null; view_title: string | null; source_type: "youtube" | "upload"; source_key: string; duration_seconds: number | null } | null;
+  analysis: { title: string | null; view_title: string | null; source_type: SourceType; source_key: string; duration_seconds: number | null } | null;
   attempts: { count: number }[];
 };
 

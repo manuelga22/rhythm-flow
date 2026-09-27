@@ -233,6 +233,17 @@ apply on the next take locally and after `modal deploy` on Modal. To add or
 retire a model, insert or disable a `feedback_models` row; no code change is
 needed.
 
+**Generated clips.** The "Generate with AI" button calls
+`request_generated_analysis()`, which queues a `generated` analysis for anyone,
+guests included. `prosody_worker/generate.py` picks a well-known movie at
+random. Gemini (`PROSODY_SCRIPT_MODEL`) then writes an original 30–60 second
+monologue inspired by it and picks the best-fitting American voice from the
+ElevenLabs account. ElevenLabs (`ELEVENLABS_API_KEY`, `PROSODY_TTS_MODEL`)
+voices it. The MP3 is stored at `generated/<id>.mp3` in `reference-audio` and
+analysed like any other clip. Each clip costs ElevenLabs and Gemini credits. A
+retried job reuses the stored audio (`analyses.generation`) instead of paying
+again. The script prompt is `prosody_worker/prompts/generate_clip.md`.
+
 Analyses are cached per source (`youtube:<id>` or `upload:<sha256>`),
 Whisper model and `ANALYZER_VERSION`. Bump the version in both
 `prosody_worker/config.py` and `analysis_settings()` in the migration
@@ -270,7 +281,7 @@ start doesn't download it.
 pip install modal
 modal setup                                   # log in
 modal secret create prosody-worker \
-  SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... GEMINI_API_KEY=... \
+  SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... GEMINI_API_KEY=... ELEVENLABS_API_KEY=... \
   WORKER_WEBHOOK_TOKEN=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
 modal deploy modal_app.py                     # prints the wake URL
 npx supabase db push                          # adds the trigger

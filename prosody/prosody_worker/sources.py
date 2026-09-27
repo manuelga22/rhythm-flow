@@ -1,6 +1,7 @@
 """Resolve an analysis row's source to a local audio file.
 
-Two kinds of source exist, matching ``analyses.source_type``:
+Two of the kinds of source in ``analyses.source_type`` are fetched here (the
+third, ``generated``, is created by ``prosody_worker/generate.py``):
 
     youtube   source_key = "youtube:<11-char video id>". The audio is pulled
               with yt-dlp and decoded to WAV with PyAV. The URL is rebuilt

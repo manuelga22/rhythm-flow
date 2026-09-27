@@ -16,7 +16,7 @@ import type { ClipSource } from "@/hooks/use-clip-player";
 import { useRecorder } from "@/hooks/use-recorder";
 import { usePracticeSession } from "@/hooks/use-practice-session";
 import { useTakeHistory } from "@/hooks/use-take-history";
-import { youtubeId, type AnalysisSource } from "@/lib/analysis";
+import { youtubeId, type AnalysisSource, type SourceType } from "@/lib/analysis";
 import { referenceAudioUrl, type PracticeSession } from "@/lib/sessions";
 
 export const Route = createFileRoute("/practice")({
@@ -37,7 +37,7 @@ function PracticePage() {
   const navigate = useNavigate();
   const [stage, setStage] = useState<Stage>("source");
   const [sourceTab, setSourceTab] = useState<SourceTab>("new");
-  const [sourceMode, setSourceMode] = useState<"youtube" | "upload">("youtube");
+  const [sourceMode, setSourceMode] = useState<SourceType>("youtube");
   const [url, setUrl] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [recording, setRecording] = useState(false);
@@ -60,8 +60,13 @@ function PracticePage() {
 
   // Uploads play from the file the user just picked. A saved session reopened
   // without the file plays the stored upload from a signed Storage URL.
+  // Generated clips always play from Storage, for guests too, once the
+  // worker has stored them.
   const fileUrl = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
-  const storedAudioPath = analysis?.source_type === "upload" && !file && user ? analysis.audio_path : null;
+  const generated = analysis?.source_type === "generated";
+  const storedAudioPath = generated
+    ? (analysis.status === "ready" ? analysis.audio_path : null)
+    : analysis?.source_type === "upload" && !file && user ? analysis.audio_path : null;
   const { data: storedAudioUrl } = useQuery({
     queryKey: ["reference-audio", storedAudioPath],
     queryFn: () => referenceAudioUrl(storedAudioPath as string),
@@ -69,10 +74,13 @@ function PracticePage() {
     // Signed URLs expire after an hour.
     staleTime: 30 * 60 * 1000,
   });
-  const uploadUrl = fileUrl ?? (storedAudioPath ? (storedAudioUrl ?? null) : null);
+  const storedUrl = storedAudioPath ? (storedAudioUrl ?? null) : null;
+  const audioUrl = generated ? storedUrl : (fileUrl ?? storedUrl);
   useEffect(() => () => { if (fileUrl) URL.revokeObjectURL(fileUrl); }, [fileUrl]);
   const videoId = analysis?.source_key.startsWith("youtube:") ? analysis.source_key.slice("youtube:".length) : youtubeId(url);
-  const clipSource: ClipSource = analysis?.source_type === "upload" ? (uploadUrl ? { kind: "audio", url: uploadUrl } : null) : videoId ? { kind: "youtube", videoId } : null;
+  const clipSource: ClipSource = analysis?.source_type === "upload" || generated
+    ? (audioUrl ? { kind: "audio", url: audioUrl } : null)
+    : videoId ? { kind: "youtube", videoId } : null;
 
   useEffect(() => {
     if (!recording) return;
@@ -116,7 +124,7 @@ function PracticePage() {
         <SourceScreen tab={sourceTab} setTab={setSourceTab} mode={sourceMode} setMode={setSourceMode} url={url} setUrl={setUrl} file={file} setFile={setFile} fileRef={fileRef} submitError={analysisStatus === "failed" ? analysisError : null} submitting={submitting} onBack={() => navigate({ to: "/" })} onContinue={analyze} onResume={resume} />
       )}
       {stage === "breakdown" && (
-        <BreakdownScreen status={analysisStatus} error={analysisError} title={clipTitle} phrases={phrases} clipSource={clipSource} selectedPhrase={selectedPhrase} setSelectedPhrase={setSelectedPhrase} onBack={() => go("source")} onContinue={() => go("shadow")} />
+        <BreakdownScreen status={analysisStatus} error={analysisError} title={clipTitle} phrases={phrases} clipSource={clipSource} generated={generated || (!analysis && sourceMode === "generated") ? { voice: analysis?.generation?.voice_name ?? null } : null} selectedPhrase={selectedPhrase} setSelectedPhrase={setSelectedPhrase} onBack={() => go("source")} onContinue={() => go("shadow")} />
       )}
       {stage === "shadow" && (
         <ShadowScreen recorder={recorder} history={history} phrases={phrases} selectedPhrase={selectedPhrase} clipSource={clipSource} onBack={() => go("breakdown")} onContinue={() => go("improvise")} />
