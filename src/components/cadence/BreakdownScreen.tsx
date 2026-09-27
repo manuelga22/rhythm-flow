@@ -2,9 +2,10 @@ import { useEffect, useRef } from "react";
 import { ArrowLeft, ArrowRight, CircleAlert, LoaderCircle, Pause, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useClipPlayer, type ClipSource } from "@/hooks/use-clip-player";
-import type { AnalysisStatus } from "@/lib/analysis";
+import type { AnalysisStatus, SourceType } from "@/lib/analysis";
 import { phraseTimeline, type PracticePhrase } from "./data";
 import { BackButton } from "./primitives";
+import { ProcessingScreen } from "./ProcessingScreen";
 
 function AccentPhrase({ phrase }: { phrase: PracticePhrase }) {
   return (
@@ -18,8 +19,8 @@ function AccentPhrase({ phrase }: { phrase: PracticePhrase }) {
   );
 }
 
-/** `generated` is set for AI clips; `voice` is the ElevenLabs voice once the clip exists. */
-export function BreakdownScreen({ status, error, title, phrases, clipSource, generated, selectedPhrase, setSelectedPhrase, onBack, onContinue }: { status: AnalysisStatus | "idle"; error: string | null; title: string; phrases: PracticePhrase[]; clipSource: ClipSource; generated?: { voice: string | null } | null; selectedPhrase: PracticePhrase | null; setSelectedPhrase: (phrase: PracticePhrase | null) => void; onBack: () => void; onContinue: () => void }) {
+/** `voice` is the ElevenLabs voice of a generated clip; `startedAt` is when the clip was requested. */
+export function BreakdownScreen({ status, error, title, phrases, clipSource, kind, voice, startedAt, selectedPhrase, setSelectedPhrase, onBack, onContinue }: { status: AnalysisStatus | "idle"; error: string | null; title: string; phrases: PracticePhrase[]; clipSource: ClipSource; kind: SourceType; voice?: string | null; startedAt: number; selectedPhrase: PracticePhrase | null; setSelectedPhrase: (phrase: PracticePhrase | null) => void; onBack: () => void; onContinue: () => void }) {
   const youtubeMount = useRef<HTMLDivElement | null>(null);
   // Hold the source back until the phrases (and the YouTube mount) render.
   const player = useClipPlayer(status === "ready" ? clipSource : null, youtubeMount);
@@ -86,26 +87,7 @@ export function BreakdownScreen({ status, error, title, phrases, clipSource, gen
     );
   }
 
-  if (status !== "ready") {
-    return (
-      <main className="device-column grid min-h-[70vh] place-items-center px-5 pb-28 pt-6">
-        <div className="text-center" aria-live="polite">
-          <LoaderCircle className="mx-auto size-8 animate-spin text-primary" />
-          {generated ? (
-            <>
-              <h1 className="mt-5 font-display text-4xl">WRITING YOUR SCENE.</h1>
-              <p className="mt-2 text-sm text-muted-foreground">Writing a scene inspired by a well-known movie, voicing it with ElevenLabs, then finding its rhythm. This takes about a minute.</p>
-            </>
-          ) : (
-            <>
-              <h1 className="mt-5 font-display text-4xl">FINDING THE RHYTHM.</h1>
-              <p className="mt-2 text-sm text-muted-foreground">Breaking the clip into phrases, pauses, and pitch movements. Longer clips can take a minute.</p>
-            </>
-          )}
-        </div>
-      </main>
-    );
-  }
+  if (status !== "ready") return <ProcessingScreen kind={kind} startedAt={startedAt} />;
 
   return (
     <main className="device-column px-5 pb-36 pt-6">
@@ -127,7 +109,7 @@ export function BreakdownScreen({ status, error, title, phrases, clipSource, gen
               <div className="min-w-0">
                 <p className="font-mono text-[9px] uppercase tracking-widest text-background/50">Full reference</p>
                 <p className="truncate text-sm font-semibold">{title}</p>
-                {generated && <p className="truncate font-mono text-[9px] uppercase tracking-widest text-primary">AI voice{generated.voice ? ` · ${generated.voice}` : ""} · Powered by ElevenLabs</p>}
+                {kind === "generated" && <p className="truncate font-mono text-[9px] uppercase tracking-widest text-primary">AI voice{voice ? ` · ${voice}` : ""} · Powered by ElevenLabs</p>}
               </div>
               <span className="shrink-0 font-mono text-[10px] tabular-nums text-background/60">{formatTime(elapsed)} / {formatTime(totalSeconds)}</span>
             </div>

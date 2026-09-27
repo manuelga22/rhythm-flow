@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useBlocker, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BottomBar } from "@/components/cadence/BottomBar";
 import { BreakdownScreen } from "@/components/cadence/BreakdownScreen";
@@ -44,6 +44,8 @@ function PracticePage() {
   const [seconds, setSeconds] = useState(0);
   const [playing, setPlaying] = useState<"reference" | "you" | null>(null);
   const [selectedPhrase, setSelectedPhrase] = useState<PracticePhrase | null>(null);
+  // When the current clip was requested, for the processing screen's progress bar.
+  const [startedAt, setStartedAt] = useState(() => Date.now());
   const fileRef = useRef<HTMLInputElement>(null);
   // Shadow takes come from the microphone; improvise still runs on the simulated timer.
   const recorder = useRecorder();
@@ -82,6 +84,14 @@ function PracticePage() {
     ? (audioUrl ? { kind: "audio", url: audioUrl } : null)
     : videoId ? { kind: "youtube", videoId } : null;
 
+  // Nothing saves a clip until it is ready, so leaving now loses it.
+  const processing = stage === "breakdown" && analysisStatus === "processing";
+  useBlocker({
+    shouldBlockFn: () => !window.confirm("Your clip is still being prepared. Leave and lose it?"),
+    enableBeforeUnload: () => processing,
+    disabled: !processing,
+  });
+
   useEffect(() => {
     if (!recording) return;
     const timer = window.setInterval(() => setSeconds((value) => value + 1), 1000);
@@ -103,6 +113,7 @@ function PracticePage() {
 
   const analyze = (source: AnalysisSource) => {
     setSelectedPhrase(null);
+    setStartedAt(Date.now());
     startAnalysis(source);
     go("breakdown");
   };
@@ -113,6 +124,7 @@ function PracticePage() {
     setSourceMode(session.sourceType);
     // The picked file (if any) belongs to another clip.
     setFile(null);
+    setStartedAt(Date.now());
     openAnalysis(session.analysisId);
     go("breakdown");
   };
@@ -124,7 +136,7 @@ function PracticePage() {
         <SourceScreen tab={sourceTab} setTab={setSourceTab} mode={sourceMode} setMode={setSourceMode} url={url} setUrl={setUrl} file={file} setFile={setFile} fileRef={fileRef} submitError={analysisStatus === "failed" ? analysisError : null} submitting={submitting} onBack={() => navigate({ to: "/" })} onContinue={analyze} onResume={resume} />
       )}
       {stage === "breakdown" && (
-        <BreakdownScreen status={analysisStatus} error={analysisError} title={clipTitle} phrases={phrases} clipSource={clipSource} generated={generated || (!analysis && sourceMode === "generated") ? { voice: analysis?.generation?.voice_name ?? null } : null} selectedPhrase={selectedPhrase} setSelectedPhrase={setSelectedPhrase} onBack={() => go("source")} onContinue={() => go("shadow")} />
+        <BreakdownScreen status={analysisStatus} error={analysisError} title={clipTitle} phrases={phrases} clipSource={clipSource} kind={analysis?.source_type ?? sourceMode} voice={analysis?.generation?.voice_name ?? null} startedAt={startedAt} selectedPhrase={selectedPhrase} setSelectedPhrase={setSelectedPhrase} onBack={() => go("source")} onContinue={() => go("shadow")} />
       )}
       {stage === "shadow" && (
         <ShadowScreen recorder={recorder} history={history} phrases={phrases} selectedPhrase={selectedPhrase} clipSource={clipSource} onBack={() => go("breakdown")} onContinue={() => go("improvise")} />
