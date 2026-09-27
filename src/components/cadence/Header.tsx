@@ -10,7 +10,7 @@ export function Header({ stage }: { stage?: Stage }) {
     <header className="sticky top-0 z-20 border-b border-ink/10 bg-background/95 backdrop-blur-md">
       <div className="device-column grid h-14 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 px-5">
         <Link to="/" className="flex cursor-pointer items-baseline gap-2" aria-label="Cadence home">
-          <span className="font-display text-xl">CADENCE</span>
+          <span className="font-display text-xl">RhythmFlow</span>
         </Link>
         {step !== null ? (
           <div className="flex items-center gap-1.5" aria-label={`${stepLabels[step]} step`}>
