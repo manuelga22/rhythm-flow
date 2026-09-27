@@ -6,9 +6,9 @@ import { Header } from "@/components/cadence/Header";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Cadence — American English Prosody Studio" },
+      { title: "RhythmFlow — Train you speaking, build confidence" },
       { name: "description", content: "Practice natural American English rhythm, stress, intonation, and connected speech." },
-      { property: "og:title", content: "Cadence — American English Prosody Studio" },
+      { property: "og:title", content: "RhythmFlow — Train you speaking, build confidence" },
       { property: "og:description", content: "A focused studio for practicing natural rhythm and connected speech." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
