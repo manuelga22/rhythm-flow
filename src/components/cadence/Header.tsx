@@ -8,8 +8,9 @@ export function Header({ stage }: { stage?: Stage }) {
   const step = stage ? stageStep[stage] : null;
   return (
     <header className="sticky top-0 z-20 border-b border-ink/10 bg-background/95 backdrop-blur-md">
-      <div className="device-column grid h-14 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 px-5">
-        <Link to="/" className="flex cursor-pointer items-baseline gap-2" aria-label="Cadence home">
+      <div className="device-column grid h-14 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 px-5 lg:max-w-none lg:px-8">
+        {/* The desktop sidebar shows the logo; invisible keeps its grid cell. */}
+        <Link to="/" className="flex cursor-pointer items-baseline gap-2 lg:invisible" aria-label="Cadence home">
           <span className="font-display text-xl">RhythmFlow</span>
         </Link>
         {step !== null ? (
