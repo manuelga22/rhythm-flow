@@ -2,12 +2,11 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, useBlocker, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BottomBar } from "@/components/cadence/BottomBar";
-import { BreakdownScreen } from "@/components/cadence/BreakdownScreen";
 import { CompleteScreen } from "@/components/cadence/CompleteScreen";
 import { FeedbackScreen } from "@/components/cadence/FeedbackScreen";
 import { Header } from "@/components/cadence/Header";
+import { PracticeScreen } from "@/components/cadence/PracticeScreen";
 import { RecordScreen } from "@/components/cadence/RecordScreen";
-import { ShadowScreen } from "@/components/cadence/ShadowScreen";
 import { SourceScreen, type SourceTab } from "@/components/cadence/SourceScreen";
 import type { PracticePhrase, Stage } from "@/components/cadence/data";
 import { useAnalysis } from "@/hooks/use-analysis";
@@ -49,14 +48,12 @@ function PracticePage() {
   const fileRef = useRef<HTMLInputElement>(null);
   // Shadow takes come from the microphone; improvise still runs on the simulated timer.
   const recorder = useRecorder();
-  const { analysis, status: analysisStatus, error: analysisError, submitting, start: startAnalysis, open: openAnalysis } = useAnalysis();
+  const { analysis, status: analysisStatus, error: analysisError, submitting, start: startAnalysis, retry: retryAnalysis, open: openAnalysis } = useAnalysis();
   const { user } = useAuth();
   // Signed-in practice is saved to a session per clip; guests get none.
   const { sessionId, savedTakes } = usePracticeSession(analysis?.status === "ready" ? analysis.id : undefined);
-  const phraseId = selectedPhrase?.id ?? null;
-  const savedForPhrase = useMemo(() => savedTakes.filter((take) => take.phrase_id === phraseId), [savedTakes, phraseId]);
-  // Shadow takes for the current clip and phrase: saved ones plus those submitted this visit.
-  const history = useTakeHistory(analysis?.id, { sessionId, saved: savedForPhrase });
+  // Shadow takes for every phrase of the current clip: saved ones plus those submitted this visit.
+  const history = useTakeHistory(analysis?.id, { sessionId, saved: savedTakes });
   const phrases = analysis?.view?.phrases ?? [];
   const clipTitle = analysis?.view?.title ?? analysis?.title ?? "Reference clip";
 
@@ -99,11 +96,10 @@ function PracticePage() {
   }, [recording]);
 
   const go = (next: Stage) => {
-    // An unsubmitted take only survives while staying on the Shadow step.
-    if (next === "shadow") recorder.stop();
-    else recorder.reset();
-    // Feedback history belongs to one clip and phrase; Improvise → Back keeps it.
-    if (next === "source" || next === "breakdown") history.clear();
+    // An unsent shadow take doesn't survive leaving the Practice step.
+    recorder.reset();
+    // Feedback history belongs to one clip; Improvise → Back keeps it.
+    if (next === "source") history.clear();
     setStage(next);
     setRecording(false);
     setPlaying(null);
@@ -117,6 +113,11 @@ function PracticePage() {
     startAnalysis(source);
     go("breakdown");
   };
+
+  const retry = retryAnalysis && (() => {
+    setStartedAt(Date.now());
+    retryAnalysis();
+  });
 
   // Reopen a saved clip on the Structure step; its takes load with the session.
   const resume = (session: PracticeSession) => {
@@ -136,13 +137,10 @@ function PracticePage() {
         <SourceScreen tab={sourceTab} setTab={setSourceTab} mode={sourceMode} setMode={setSourceMode} url={url} setUrl={setUrl} file={file} setFile={setFile} fileRef={fileRef} submitError={analysisStatus === "failed" ? analysisError : null} submitting={submitting} onBack={() => navigate({ to: "/" })} onContinue={analyze} onResume={resume} />
       )}
       {stage === "breakdown" && (
-        <BreakdownScreen status={analysisStatus} error={analysisError} title={clipTitle} phrases={phrases} clipSource={clipSource} kind={analysis?.source_type ?? sourceMode} voice={analysis?.generation?.voice_name ?? null} startedAt={startedAt} selectedPhrase={selectedPhrase} setSelectedPhrase={setSelectedPhrase} onBack={() => go("source")} onContinue={() => go("shadow")} />
-      )}
-      {stage === "shadow" && (
-        <ShadowScreen recorder={recorder} history={history} phrases={phrases} selectedPhrase={selectedPhrase} clipSource={clipSource} onBack={() => go("breakdown")} onContinue={() => go("improvise")} />
+        <PracticeScreen analysisId={analysis?.status === "ready" ? analysis.id : undefined} status={analysisStatus} error={analysisError} title={clipTitle} phrases={phrases} clipSource={clipSource} kind={analysis?.source_type ?? sourceMode} voice={analysis?.generation?.voice_name ?? null} startedAt={startedAt} selectedPhrase={selectedPhrase} setSelectedPhrase={setSelectedPhrase} recorder={recorder} history={history} onBack={() => go("source")} onRetry={retry} onContinue={() => go("improvise")} />
       )}
       {stage === "improvise" && (
-        <RecordScreen kind="improvise" recording={recording} seconds={seconds} onRecord={() => setRecording((value) => !value)} onBack={() => go("shadow")} onAnalyze={() => go("improvFeedback")} />
+        <RecordScreen kind="improvise" recording={recording} seconds={seconds} onRecord={() => setRecording((value) => !value)} onBack={() => go("breakdown")} onAnalyze={() => go("improvFeedback")} />
       )}
       {stage === "improvFeedback" && <FeedbackScreen kind="improvise" playing={playing} setPlaying={setPlaying} onRetry={() => go("improvise")} onContinue={() => go("complete")} />}
       {stage === "complete" && <CompleteScreen onAgain={() => go("source")} />}

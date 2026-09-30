@@ -7,10 +7,11 @@ import tempfile
 from pathlib import Path
 from typing import Callable
 
-from prosody_coach.audio import AudioError, encode_clip
+from prosody_coach.audio import AudioError, encode_clip, encode_clips
 from prosody_coach.models import Recording
 from prosody_coach.pipeline import PipelineOptions, analyze_recording
 from prosody_coach.transcribe import TranscriptionError
+from prosody_worker.config import CLIP_PAD_SECONDS
 from prosody_worker.generate import GeneratedClip, generate_clip
 from prosody_worker.serialize import summary_fields, to_practice_view
 from prosody_worker.sources import (
@@ -47,7 +48,7 @@ def process(
             source = _resolve(row, store, Path(tmp), fetch_youtube, generate)
             options = PipelineOptions(model_size=row.get("model_size") or PipelineOptions.model_size)
             recording = analyze(source.path, "reference", options)
-            clip_path = _store_clip(row_id, source.path, store) if recording.words else None
+            clip_path = _store_clip(row_id, source.path, recording, store) if recording.words else None
     except (SourceError, AudioError, TranscriptionError) as exc:
         log.info("analysis %s failed: %s", row_id, exc)
         store.fail(row_id, str(exc))
@@ -74,7 +75,7 @@ def process(
     log.info("analysis %s ready (%d phrases)", row_id, len(recording.phrases))
 
 
-def _store_clip(row_id: str, source: Path, store: AnalysisStore) -> str | None:
+def _store_clip(row_id: str, source: Path, recording: Recording, store: AnalysisStore) -> str | None:
     """Save a compressed copy of the reference for models that listen to
     takes. YouTube audio is not kept otherwise. Best effort: without a clip
     those models hear the learner's take only."""
@@ -85,7 +86,25 @@ def _store_clip(row_id: str, source: Path, store: AnalysisStore) -> str | None:
     except Exception:
         log.warning("analysis %s: could not store the listening clip", row_id, exc_info=True)
         return None
+    _store_phrase_clips(row_id, source, recording, store)
     return path
+
+
+def _store_phrase_clips(row_id: str, source: Path, recording: Recording, store: AnalysisStore) -> None:
+    """Save each phrase on its own as clips/<id>/phrase-<n>.ogg, n being the
+    practice view's 1-based phrase id, so the AI coach hears exactly the
+    phrase being practised. Best effort: without them the coach hears the
+    whole clip and is told where the phrase is."""
+    spans = [
+        (source.with_name(f"phrase-{index}.ogg"), max(0.0, phrase.start - CLIP_PAD_SECONDS), phrase.end + CLIP_PAD_SECONDS)
+        for index, phrase in enumerate(recording.phrases, start=1)
+        if phrase.words
+    ]
+    try:
+        for clip in encode_clips(source, spans):
+            store.upload_audio(f"clips/{row_id}/{clip.name}", clip.read_bytes(), content_type="audio/ogg", upsert=True)
+    except Exception:
+        log.warning("analysis %s: could not store the phrase clips", row_id, exc_info=True)
 
 
 def _resolve(

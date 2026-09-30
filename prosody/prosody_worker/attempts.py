@@ -20,7 +20,7 @@ from prosody_coach.listen import listen_feedback
 from prosody_coach.models import Comparison, Feedback, Phrase, Recording
 from prosody_coach.pipeline import PipelineOptions, analyze_recording, build_comparison
 from prosody_coach.transcribe import TranscriptionError
-from prosody_worker.config import MAX_ATTEMPT_BYTES
+from prosody_worker.config import CLIP_PAD_SECONDS, MAX_ATTEMPT_BYTES
 from prosody_worker.serialize import to_comparison_view
 from prosody_worker.store import AttemptStore, Row
 
@@ -28,9 +28,6 @@ log = logging.getLogger(__name__)
 
 Analyzer = Callable[[str | Path, str, PipelineOptions], Recording]
 Listener = Callable[..., Feedback]
-
-# Context kept around the practised phrase in the clip the model hears.
-CLIP_PAD_SECONDS = 0.25
 
 NO_SPEECH = "We couldn't hear any speech in your take. Try again closer to the mic."
 

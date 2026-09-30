@@ -147,21 +147,36 @@ def encode_clip(
 
     Encoded with PyAV's bundled libopus, so no ffmpeg executable is needed.
     """
+    signal = load_audio(src, target_rate)
+    return _write_clip(signal, Path(src).name, Path(dest), start, end)
+
+
+def encode_clips(
+    src: str | Path,
+    spans: list[tuple[str | Path, float, float]],
+    target_rate: int = TARGET_RATE,
+) -> list[Path]:
+    """Like ``encode_clip`` for several ``(dest, start, end)`` cuts of the
+    same source, decoding it once."""
+    signal = load_audio(src, target_rate)
+    return [_write_clip(signal, Path(src).name, Path(dest), start, end) for dest, start, end in spans]
+
+
+def _write_clip(signal: AudioSignal, name: str, dest: Path, start: float | None, end: float | None) -> Path:
     import av
 
-    signal = load_audio(src, target_rate)
-    first = max(0, int((start or 0.0) * target_rate))
-    last = len(signal.samples) if end is None else min(len(signal.samples), int(end * target_rate))
+    rate = signal.sample_rate
+    first = max(0, int((start or 0.0) * rate))
+    last = len(signal.samples) if end is None else min(len(signal.samples), int(end * rate))
     if last <= first:
-        raise AudioError(f"Empty clip requested from {Path(src).name} ({start}..{end} s).")
+        raise AudioError(f"Empty clip requested from {name} ({start}..{end} s).")
     pcm = (np.clip(signal.samples[first:last], -1.0, 1.0) * 32767.0).astype(np.int16)
 
-    dest = Path(dest)
     frame = av.AudioFrame.from_ndarray(pcm.reshape(1, -1), format="s16", layout="mono")
-    frame.sample_rate = target_rate
+    frame.sample_rate = rate
     try:
         with av.open(str(dest), mode="w", format="ogg") as container:
-            stream = container.add_stream("libopus", rate=target_rate, layout="mono")
+            stream = container.add_stream("libopus", rate=rate, layout="mono")
             stream.bit_rate = CLIP_BITRATE
             for packet in stream.encode(frame):
                 container.mux(packet)
@@ -169,7 +184,7 @@ def encode_clip(
             for packet in stream.encode(None):
                 container.mux(packet)
     except av.error.FFmpegError as exc:
-        raise AudioError(f"Could not encode a clip of {Path(src).name}: {exc}") from exc
+        raise AudioError(f"Could not encode a clip of {name}: {exc}") from exc
     return dest
 
 
