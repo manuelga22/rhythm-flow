@@ -200,6 +200,12 @@ YouTube downloads need a JavaScript runtime on PATH to pass YouTube's
 challenge: Node (already required for the web app), Deno or Bun. Without
 one, downloads fail with HTTP 403 now and then; the worker warns at startup.
 
+YouTube also asks datacenter IPs (Modal, cloud VMs) to "sign in to confirm
+you're not a bot". Set `PROSODY_YOUTUBE_PROXY` to a rotating residential
+proxy's HTTP endpoint (`http://user:pass@host:port`) and yt-dlp, and only
+yt-dlp, goes through it. Pick the HTTP endpoint, not SOCKS. On a home
+connection it can stay unset.
+
 ```bash
 pip install -r requirements-worker.txt       # no ffmpeg install needed
 # SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY come from ../.env
@@ -286,6 +292,7 @@ pip install modal
 modal setup                                   # log in
 modal secret create prosody-worker \
   SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... GEMINI_API_KEY=... ELEVENLABS_API_KEY=... \
+  PROSODY_YOUTUBE_PROXY=http://user:pass@host:port \
   WORKER_WEBHOOK_TOKEN=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
 modal deploy modal_app.py                     # prints the wake URL
 npx supabase db push                          # adds the trigger

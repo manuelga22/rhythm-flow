@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import sys
 import tempfile
 import threading
@@ -32,6 +33,7 @@ from prosody_worker.importer import import_analysis, load_recording
 from prosody_worker.jobs import process
 from prosody_worker.main import poll, run_attempts_once
 from prosody_worker.scaling import scale
+from prosody_worker import sources, youtube_proxy
 from prosody_worker.serialize import to_practice_view
 from prosody_worker.sources import (
     ResolvedSource,
@@ -965,6 +967,81 @@ def test_youtube_other_download_errors_are_not_retried():
             raise AssertionError("expected a SourceError")
 
     assert len(attempts) == 1
+
+
+_BOT_CHECK = (
+    "ERROR: [youtube] dQw4w9WgXcQ: Sign in to confirm you’re not a bot. "
+    "Use --cookies-from-browser or --cookies for the authentication."
+)
+_PROXY = "http://user:secret@proxy.example.com:8000"
+
+
+@contextmanager
+def _youtube_proxy(value: str | None):
+    saved = os.environ.pop(youtube_proxy.ENV_VAR, None)
+    if value is not None:
+        os.environ[youtube_proxy.ENV_VAR] = value
+    try:
+        yield
+    finally:
+        os.environ.pop(youtube_proxy.ENV_VAR, None)
+        if saved is not None:
+            os.environ[youtube_proxy.ENV_VAR] = saved
+
+
+def test_youtube_proxy_is_passed_to_yt_dlp():
+    dest = Path(tempfile.mkdtemp(dir=_TMP))
+    with _youtube_proxy(_PROXY), _fake_yt_dlp([_FORBIDDEN]) as attempts:
+        download_youtube_audio("dQw4w9WgXcQ", dest)
+
+    assert [options["proxy"] for options in attempts] == [_PROXY, _PROXY]
+
+
+def test_youtube_without_proxy_downloads_directly():
+    dest = Path(tempfile.mkdtemp(dir=_TMP))
+    with _youtube_proxy(None), _fake_yt_dlp([]) as attempts:
+        download_youtube_audio("dQw4w9WgXcQ", dest)
+
+    assert "proxy" not in attempts[0]
+
+
+def test_youtube_bot_check_is_retried_until_it_succeeds():
+    dest = Path(tempfile.mkdtemp(dir=_TMP))
+    with _youtube_proxy(_PROXY), _fake_yt_dlp([_BOT_CHECK, _BOT_CHECK]) as attempts:
+        source = download_youtube_audio("dQw4w9WgXcQ", dest)
+
+    assert len(attempts) == 3
+    assert source.title == "Fake video"
+
+
+def test_youtube_bot_check_gives_up_with_a_readable_message():
+    dest = Path(tempfile.mkdtemp(dir=_TMP))
+    with _youtube_proxy(None), _fake_yt_dlp([_BOT_CHECK] * 3) as attempts:
+        try:
+            download_youtube_audio("dQw4w9WgXcQ", dest)
+        except SourceError as exc:
+            message = str(exc)
+        else:
+            raise AssertionError("expected a SourceError")
+
+    assert len(attempts) == 3
+    assert message == sources.BOT_CHECK_MESSAGE
+    assert "\x1b" not in message
+
+
+def test_youtube_error_hides_proxy_credentials():
+    dest = Path(tempfile.mkdtemp(dir=_TMP))
+    failure = f"ERROR: Unable to connect to proxy {_PROXY}: connection refused"
+    with _youtube_proxy(_PROXY), _fake_yt_dlp([failure]):
+        try:
+            download_youtube_audio("dQw4w9WgXcQ", dest)
+        except SourceError as exc:
+            message = str(exc)
+        else:
+            raise AssertionError("expected a SourceError")
+
+    assert "secret" not in message
+    assert "<proxy>" in message
 
 
 # --------------------------------------------------------------------------

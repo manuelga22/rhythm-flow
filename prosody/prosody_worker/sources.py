@@ -22,6 +22,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from prosody_coach.audio import AudioError, decode_to_wav
+from prosody_worker import youtube_proxy
 from prosody_worker.config import MAX_SOURCE_SECONDS, MAX_UPLOAD_BYTES
 
 
@@ -32,8 +33,17 @@ log = logging.getLogger(__name__)
 # web app, so allow any of them. Without one, downloads 403 intermittently.
 JS_RUNTIMES = ("deno", "node", "bun")
 
-# Each attempt re-extracts, which gets freshly signed stream URLs.
+# Each attempt re-extracts, which gets freshly signed stream URLs and, through
+# a rotating proxy, a new exit IP.
 YOUTUBE_ATTEMPTS = 3
+
+# YouTube's "Sign in to confirm you're not a bot" page, served to IPs it
+# distrusts (datacenters such as Modal's). It has used both apostrophes.
+_BOT_CHECK_MARKERS = ("confirm you're not a bot", "confirm you’re not a bot")
+BOT_CHECK_MESSAGE = (
+    "YouTube blocked the download as automated traffic. Try again in a few "
+    "minutes, or upload the audio file instead."
+)
 
 
 class SourceError(RuntimeError):
@@ -82,6 +92,10 @@ def sha256_hex(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _is_bot_check(message: str) -> bool:
+    return any(marker in message for marker in _BOT_CHECK_MARKERS)
+
+
 def download_youtube_audio(video_id: str, dest: Path) -> ResolvedSource:
     """Download a video's audio track as WAV into ``dest``."""
     try:
@@ -94,7 +108,7 @@ def download_youtube_audio(video_id: str, dest: Path) -> ResolvedSource:
     # No yt-dlp postprocessors: those shell out to the ffmpeg and ffprobe
     # executables. A single audio-only stream needs no merging, and PyAV
     # decodes it to WAV below.
-    options = {
+    options = youtube_proxy.with_proxy({
         "format": "bestaudio[ext=m4a]/bestaudio/best",
         "outtmpl": str(dest / "download.%(ext)s"),
         "noplaylist": True,
@@ -104,7 +118,7 @@ def download_youtube_audio(video_id: str, dest: Path) -> ResolvedSource:
         "js_runtimes": {name: {} for name in JS_RUNTIMES},
         # Error text ends up in the row and the UI; keep ANSI codes out of it.
         "color": {"stdout": "no_color", "stderr": "no_color"},
-    }
+    })
 
     for attempt in range(1, YOUTUBE_ATTEMPTS + 1):
         try:
@@ -120,13 +134,25 @@ def download_youtube_audio(video_id: str, dest: Path) -> ResolvedSource:
                 info = ydl.process_ie_result(info, download=True)
             break
         except DownloadError as exc:
-            if "HTTP Error 403" not in str(exc):
-                raise SourceError(f"Could not download the YouTube audio: {exc}") from exc
+            message = youtube_proxy.redact(str(exc))
+            bot_check = _is_bot_check(message)
+            if not bot_check and "HTTP Error 403" not in message:
+                raise SourceError(f"Could not download the YouTube audio: {message}") from exc
+            if bot_check and not youtube_proxy.proxy_url() and attempt == 1:
+                log.warning(
+                    "YouTube bot check for %s; set %s to download through a residential proxy",
+                    video_id, youtube_proxy.ENV_VAR,
+                )
             if attempt == YOUTUBE_ATTEMPTS:
+                if bot_check:
+                    raise SourceError(BOT_CHECK_MESSAGE) from exc
                 raise SourceError(
                     "YouTube refused the download (HTTP 403). Try again in a minute."
                 ) from exc
-            log.warning("YouTube 403 for %s (attempt %d/%d), retrying", video_id, attempt, YOUTUBE_ATTEMPTS)
+            log.warning(
+                "YouTube %s for %s (attempt %d/%d), retrying",
+                "bot check" if bot_check else "403", video_id, attempt, YOUTUBE_ATTEMPTS,
+            )
             for partial in dest.glob("download.*"):
                 partial.unlink(missing_ok=True)
 

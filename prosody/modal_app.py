@@ -14,8 +14,12 @@ Deploy from this directory:
 
     modal secret create prosody-worker SUPABASE_URL=... \
         SUPABASE_SERVICE_ROLE_KEY=... WORKER_WEBHOOK_TOKEN=... \
-        GEMINI_API_KEY=... ELEVENLABS_API_KEY=...
+        GEMINI_API_KEY=... ELEVENLABS_API_KEY=... \
+        PROSODY_YOUTUBE_PROXY=http://user:pass@host:port
     modal deploy modal_app.py
+
+YouTube asks Modal's datacenter IPs to sign in, so YouTube downloads need
+PROSODY_YOUTUBE_PROXY: a rotating residential proxy, used by yt-dlp only.
 
 Local development is unchanged: ``python -m prosody_worker`` still polls.
 """

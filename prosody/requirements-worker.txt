@@ -11,4 +11,6 @@ python-dotenv>=1.0.0
 # The [default] extra installs yt-dlp-ejs, the scripts that solve YouTube's
 # JavaScript challenge. They run on Node (already needed for the web app),
 # Deno or Bun; without a runtime, downloads fail with HTTP 403 now and then.
+# From datacenter IPs (Modal) YouTube also wants a sign-in; set
+# PROSODY_YOUTUBE_PROXY to a residential proxy there (see README).
 yt-dlp[default]>=2026.8.19
