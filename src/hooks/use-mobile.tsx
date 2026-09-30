@@ -17,3 +17,18 @@ export function useIsMobile() {
 
   return !!isMobile;
 }
+
+/** Whether a CSS media query matches, e.g. "(min-width: 1024px)". False until mounted. */
+export function useMediaQuery(query: string) {
+  const [matches, setMatches] = React.useState(false);
+
+  React.useEffect(() => {
+    const mql = window.matchMedia(query);
+    const onChange = () => setMatches(mql.matches);
+    mql.addEventListener("change", onChange);
+    setMatches(mql.matches);
+    return () => mql.removeEventListener("change", onChange);
+  }, [query]);
+
+  return matches;
+}

@@ -42,7 +42,7 @@ export function TakeCard({ take, expanded, onToggle, onRetry }: { take: TakeEntr
   );
 }
 
-function TakeStatusBadge({ take }: { take: TakeEntry }) {
+export function TakeStatusBadge({ take }: { take: TakeEntry }) {
   const label = "font-mono text-[10px] uppercase tracking-widest";
   if (take.status === "submitting" || take.status === "processing") {
     return <span className={`flex items-center gap-1.5 text-muted-foreground ${label}`}><LoaderCircle className="size-3.5 animate-spin" />{take.status === "submitting" ? "Sending" : "Analysing"}</span>;

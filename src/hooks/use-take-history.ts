@@ -24,7 +24,7 @@ type Entry = {
 export type TakeStatus = "submitting" | "processing" | "ready" | "failed";
 
 export type TakeEntry = Pick<Entry, "localId" | "duration" | "peaks" | "phraseId"> & {
-  /** 1-based take number, counting saved takes first. */
+  /** 1-based take number within its phrase (or the full clip), counting saved takes first. */
   number: number;
   /** Null when a saved take's audio couldn't be signed. */
   url: string | null;
@@ -35,9 +35,17 @@ export type TakeEntry = Pick<Entry, "localId" | "duration" | "peaks" | "phraseId
   canRetry: boolean;
 };
 
+/** How practice on one phrase (null: the full clip) is going. */
+export type PhraseProgress = {
+  count: number;
+  pending: number;
+  /** The take that hit the most beats, as a share of the beats. */
+  best: { matched: number; total: number } | null;
+};
+
 /**
- * Shadow takes for the current clip and phrase, newest first: takes saved to
- * the signed-in user's session followed by those submitted this visit. Each
+ * Shadow takes for the current clip, newest first: those submitted this visit
+ * followed by takes saved to the signed-in user's session. Each
  * is followed until the worker has compared it. Updates arrive over Realtime,
  * with polling as a fallback while an attempt is processing.
  */
@@ -136,12 +144,21 @@ export function useTakeHistory(analysisId: string | undefined, { sessionId = nul
     return () => unsubscribes.forEach((unsubscribe) => unsubscribe());
   }, [processingIds, queryClient]);
 
-  const localTakes: TakeEntry[] = entries.map((entry, index) => {
+  // Takes are numbered per phrase: saved ones first, oldest to newest.
+  const savedCount = new Map<number | null, number>();
+  for (const take of savedTakes) savedCount.set(take.phrase_id, (savedCount.get(take.phrase_id) ?? 0) + 1);
+  const localCount = new Map<number | null, number>();
+  for (const entry of entries) localCount.set(entry.phraseId, (localCount.get(entry.phraseId) ?? 0) + 1);
+
+  const newerLocal = new Map<number | null, number>();
+  const localTakes: TakeEntry[] = entries.map((entry) => {
     const attempt = entry.attemptId ? attempts.get(entry.attemptId) : undefined;
     const status: TakeStatus = entry.submitError ? "failed" : entry.submitting || !entry.attemptId ? "submitting" : (attempt?.status ?? "processing");
+    const newer = newerLocal.get(entry.phraseId) ?? 0;
+    newerLocal.set(entry.phraseId, newer + 1);
     return {
       localId: entry.localId,
-      number: savedTakes.length + entries.length - index,
+      number: (savedCount.get(entry.phraseId) ?? 0) + (localCount.get(entry.phraseId) ?? 0) - newer,
       url: entry.url,
       duration: entry.duration,
       peaks: entry.peaks,
@@ -152,12 +169,15 @@ export function useTakeHistory(analysisId: string | undefined, { sessionId = nul
       canRetry: true,
     };
   });
+  const olderSaved = new Map<number | null, number>();
   const earlierTakes: TakeEntry[] = savedTakes
-    .map((take, index) => {
+    .map((take) => {
       const attempt = attempts.get(take.id) ?? take;
+      const number = (olderSaved.get(take.phrase_id) ?? 0) + 1;
+      olderSaved.set(take.phrase_id, number);
       return {
         localId: `saved-${take.id}`,
-        number: index + 1,
+        number,
         url: take.url,
         duration: take.duration,
         peaks: [],
@@ -171,8 +191,23 @@ export function useTakeHistory(analysisId: string | undefined, { sessionId = nul
     .reverse();
   const takes = [...localTakes, ...earlierTakes];
 
+  const progress = new Map<number | null, PhraseProgress>();
+  for (const take of takes) {
+    const current = progress.get(take.phraseId) ?? { count: 0, pending: 0, best: null };
+    const beats = take.result?.beats;
+    const better = beats && beats.total > 0 && (!current.best || beats.matched / beats.total > current.best.matched / current.best.total);
+    progress.set(take.phraseId, {
+      count: current.count + 1,
+      pending: current.pending + (take.status === "submitting" || take.status === "processing" ? 1 : 0),
+      best: better ? { matched: beats.matched, total: beats.total } : current.best,
+    });
+  }
+
   return {
     takes,
+    /** Takes for one phrase, or the full clip when null. */
+    takesFor: (phraseId: number | null) => takes.filter((take) => take.phraseId === phraseId),
+    progress,
     pending: takes.filter((take) => take.status === "submitting" || take.status === "processing").length,
     submit,
     retry,

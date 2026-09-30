@@ -26,6 +26,7 @@ from prosody_coach.audio import encode_clip, load_audio
 from prosody_coach.models import Feedback, PitchMovement, Prominence, Recording
 from prosody_coach.transcribe import TimedWord, TranscriptionError
 from prosody_worker.attempts import NO_SPEECH, process_attempt, reference_excerpt
+from prosody_worker.config import CLAIM_TIMEOUT_SECONDS
 from prosody_worker.generate import GeneratedClip
 from prosody_worker.importer import import_analysis, load_recording
 from prosody_worker.jobs import process
@@ -38,6 +39,7 @@ from prosody_worker.sources import (
     parse_youtube_id,
     sha256_hex,
 )
+from prosody_worker.store import SupabaseStore, parse_interval
 
 from tests import synth
 
@@ -339,6 +341,15 @@ def test_job_stores_a_listening_clip():
     assert store.completed["row-1"]["clip_path"] == "clips/row-1.ogg"
     assert store.content_types["clips/row-1.ogg"] == "audio/ogg"
     assert store.uploaded["clips/row-1.ogg"][:4] == b"OggS"
+
+    # One clip per phrase for the AI coach, numbered like the practice view.
+    phrases = store.completed["row-1"]["view"]["phrases"]
+    assert phrases
+    for phrase in phrases:
+        clip = store.uploaded[f"clips/row-1/phrase-{phrase['id']}.ogg"]
+        assert clip[:4] == b"OggS"
+        # A phrase is a short cut of the clip, not the whole thing.
+        assert len(clip) < len(store.uploaded["clips/row-1.ogg"]) or len(phrases) == 1
 
 
 def test_clip_failure_still_completes_the_analysis():
@@ -899,6 +910,71 @@ def test_youtube_other_download_errors_are_not_retried():
 # --------------------------------------------------------------------------
 # Standalone runner (no pytest required)
 # --------------------------------------------------------------------------
+
+
+def test_parse_interval_reads_postgres_output():
+    assert parse_interval("00:15:00") == 900
+    assert parse_interval("00:00:30.5") == 30.5
+    assert parse_interval("1 day 02:00:00") == 93600
+    assert parse_interval("2 days") == 172800
+    assert parse_interval("-00:05:00") == -300
+
+
+def test_parse_interval_rejects_other_formats():
+    for value in ("", "1 mon", "PT15M", "15 minutes", "1 year 00:00:01"):
+        try:
+            parse_interval(value)
+        except ValueError:
+            continue
+        raise AssertionError(f"{value!r} should be rejected")
+
+
+class _SettingsClient:
+    """Answers job_settings lookups the way supabase-py does, counting calls."""
+
+    def __init__(self, rows=None, error=None):
+        self.rows, self.error, self.calls = rows or [], error, 0
+
+    def table(self, name):
+        assert name == "job_settings"
+        return self
+
+    def select(self, columns):
+        return self
+
+    def eq(self, column, value):
+        return self
+
+    def limit(self, count):
+        return self
+
+    def execute(self):
+        self.calls += 1
+        if self.error:
+            raise self.error
+        return types.SimpleNamespace(data=self.rows)
+
+
+def _settings_store(client):
+    store = SupabaseStore.__new__(SupabaseStore)
+    store._client = client
+    store._claim_timeouts = {}
+    return store
+
+
+def test_claim_timeout_comes_from_job_settings_and_is_cached():
+    client = _SettingsClient(rows=[{"claim_timeout": "00:06:00"}])
+    store = _settings_store(client)
+    assert store.claim_timeout("attempts") == 360
+    assert store.claim_timeout("attempts") == 360
+    assert client.calls == 1
+
+
+def test_claim_timeout_falls_back_without_job_settings():
+    store = _settings_store(_SettingsClient(error=RuntimeError("relation \"job_settings\" does not exist")))
+    assert store.claim_timeout("analyses") == CLAIM_TIMEOUT_SECONDS
+    store = _settings_store(_SettingsClient(rows=[{"claim_timeout": "1 mon"}]))
+    assert store.claim_timeout("analyses") == CLAIM_TIMEOUT_SECONDS
 
 
 def _run_all() -> int:

@@ -42,7 +42,7 @@ export function useAnalysis() {
   const status: AnalysisStatus | "idle" = loading ? "processing" : failed ? "failed" : (analysis?.status ?? "idle");
   const error = request.error?.message ?? (analysis ? analysis.error : query.error?.message) ?? null;
 
-  const { mutate, reset } = request;
+  const { mutate, reset, variables } = request;
   const start = useCallback(
     (source: Parameters<typeof mutate>[0]) => {
       setOpenedId(null);
@@ -50,6 +50,10 @@ export function useAnalysis() {
     },
     [mutate],
   );
+  // Ask again for the source last requested. request_analysis re-queues a failed row.
+  const retry = useCallback(() => {
+    if (variables) mutate(variables);
+  }, [mutate, variables]);
   const open = useCallback(
     (analysisId: string) => {
       reset();
@@ -64,6 +68,8 @@ export function useAnalysis() {
     error,
     submitting: request.isPending,
     start,
+    /** Undefined when there is no requested source to retry, e.g. a reopened session. */
+    retry: variables ? retry : undefined,
     open,
     reset,
   };

@@ -18,3 +18,4 @@
 - [x] Add a sign-in-to-save prompt for guests
 - [x] Save practice sessions to the signed-in account
 - [x] Continue a saved session from the Source step
+- [x] Merge Structure and Shadow into one Practice page: record and review each phrase in place, with per-phrase progress

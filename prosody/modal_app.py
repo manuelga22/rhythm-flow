@@ -69,8 +69,9 @@ def drain(queue: str) -> None:
     poll(run, SupabaseStore(config), threading.Event(), config.poll_seconds, config.batch_size, once=True)
 
 
-# Timeout stays under CLAIM_TIMEOUT_SECONDS so a killed run's row becomes
-# claimable again soon after. One container per queue: overlapping wakes
+# Timeout stays under job_settings.claim_timeout (CLAIM_TIMEOUT_SECONDS
+# when the table is missing) so a killed run's row becomes claimable again
+# soon after, and a healthy run is never mistaken for an abandoned one. One container per queue: overlapping wakes
 # queue up behind it and find nothing left to do.
 @app.function(secrets=secrets, cpu=2, memory=2048, timeout=14 * 60, max_containers=1)
 def drain_analyses() -> None:

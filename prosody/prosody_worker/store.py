@@ -7,7 +7,9 @@ query the worker issues in one place.
 
 from __future__ import annotations
 
+import logging
 import re
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
 
@@ -20,6 +22,29 @@ from prosody_worker.config import (
 )
 
 Row = dict[str, Any]
+
+log = logging.getLogger("prosody_worker")
+
+# How long the worker trusts a claim_timeout read from job_settings.
+SETTINGS_TTL_SECONDS = 5 * 60
+
+_INTERVAL = re.compile(
+    r"^\s*(?:(?P<days>-?\d+) days?)?\s*"
+    r"(?:(?P<sign>-)?(?P<hours>\d+):(?P<minutes>\d{2}):(?P<seconds>\d{2}(?:\.\d+)?))?\s*$"
+)
+
+
+def parse_interval(value: str) -> float:
+    """Seconds in a Postgres interval as PostgREST returns it, e.g. "00:15:00"
+    or "1 day 02:00:00". Month and year units have no fixed length and are
+    rejected, like any other format."""
+    match = _INTERVAL.match(value)
+    if not match or not (match["days"] or match["hours"]):
+        raise ValueError(f"unsupported interval: {value!r}")
+    seconds = int(match["hours"] or 0) * 3600 + int(match["minutes"] or 0) * 60 + float(match["seconds"] or 0)
+    if match["sign"]:
+        seconds = -seconds
+    return int(match["days"] or 0) * 86400 + seconds
 
 
 class AnalysisStore(Protocol):
@@ -69,6 +94,8 @@ class SupabaseStore:
                 "supabase is not installed; pip install -r requirements-worker.txt"
             ) from exc
         self._client = create_client(config.supabase_url, config.service_role_key)
+        # queue -> (claim timeout in seconds, when it was read)
+        self._claim_timeouts: dict[str, tuple[float, float]] = {}
 
     def _table(self, name: str = "analyses"):
         return self._client.table(name)
@@ -79,8 +106,30 @@ class SupabaseStore:
             analyzer_version, limit,
         )
 
+    def claim_timeout(self, queue: str) -> float:
+        """Seconds before a claimed row in ``queue`` may be claimed again.
+
+        Read from job_settings, which the database watchdog uses too, so the
+        two agree on when a job is abandoned. Falls back to
+        CLAIM_TIMEOUT_SECONDS on a database without the table.
+        """
+        cached = self._claim_timeouts.get(queue)
+        now = time.monotonic()
+        if cached and now - cached[1] < SETTINGS_TTL_SECONDS:
+            return cached[0]
+        seconds = float(CLAIM_TIMEOUT_SECONDS)
+        try:
+            response = self._table("job_settings").select("claim_timeout").eq("queue", queue).limit(1).execute()
+            rows = response.data or []
+            if rows:
+                seconds = parse_interval(rows[0]["claim_timeout"])
+        except Exception:  # missing table, bad value, dropped connection
+            log.warning("using the default claim timeout for %s", queue, exc_info=True)
+        self._claim_timeouts[queue] = (seconds, now)
+        return seconds
+
     def _fetch_pending(self, table: str, columns: str, analyzer_version: str, limit: int) -> list[Row]:
-        stale = (datetime.now(timezone.utc) - timedelta(seconds=CLAIM_TIMEOUT_SECONDS)).isoformat()
+        stale = (datetime.now(timezone.utc) - timedelta(seconds=self.claim_timeout(table))).isoformat()
         response = (
             self._table(table)
             .select(columns)

@@ -32,6 +32,9 @@ DEFAULT_MODEL_SIZE = "small"
 AUDIO_BUCKET = "reference-audio"
 ATTEMPT_BUCKET = "attempt-audio"
 
+# Context kept around a phrase in the reference clips the models hear.
+CLIP_PAD_SECONDS = 0.25
+
 # Guard rails for what a single job may pull down and analyse.
 MAX_SOURCE_SECONDS = 10 * 60
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
@@ -43,7 +46,9 @@ SCRIPT_MODEL = os.environ.get("PROSODY_SCRIPT_MODEL", "gemini-3.1-flash-lite")
 TTS_MODEL = os.environ.get("PROSODY_TTS_MODEL", "eleven_multilingual_v2")
 
 # A claimed row that has not finished within this window is assumed to
-# belong to a crashed worker and becomes claimable again.
+# belong to a crashed worker and becomes claimable again. The live value is
+# job_settings.claim_timeout (supabase/migrations/*_job_watchdog.sql); this
+# is the fallback for a database without that table.
 CLAIM_TIMEOUT_SECONDS = 15 * 60
 MAX_ATTEMPTS = 3
 
