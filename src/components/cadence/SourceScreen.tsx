@@ -30,26 +30,30 @@ export function SourceScreen({ tab, setTab, mode, setMode, url, setUrl, file, se
       : { title: file?.name ?? "No file yet", detail: file ? `WAV · ${formatSize(file.size)}` : "Choose a WAV file" };
 
   return (
-    <main className="device-column px-5 pb-28 pt-6">
+    <main className="device-column px-5 pb-28 pt-6 lg:max-w-6xl lg:px-8 lg:pb-12">
       <BackButton onClick={onBack} />
-      <div className="mt-8 animate-rise">
-        <p className="font-mono text-xs uppercase tracking-widest text-primary">01 · Source</p>
-        <h1 className="mt-3 font-display text-5xl leading-none">CHOOSE A VOICE.</h1>
-        <p className="mt-3 max-w-xl text-muted-foreground">{tab === "new" ? "Paste a YouTube link, choose a clear WAV recording, or generate a clip with AI." : "Pick up a clip you've practiced before."}</p>
-      </div>
-      <div role="tablist" aria-label="Practice source" className="mt-6 grid grid-cols-2 rounded-2xl border border-ink/10 bg-card p-1">
-        {(["new", "continue"] as const).map((value) => (
-          <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)} className={`h-10 cursor-pointer rounded-xl text-sm font-medium transition-colors ${tab === value ? "bg-ink text-background" : "text-muted-foreground hover:text-foreground"}`}>
-            {value === "new" ? "New clip" : "Continue"}
-          </button>
-        ))}
+      {/* Desktop: the tabs sit beside the intro instead of under it. */}
+      <div className="lg:flex lg:items-end lg:justify-between lg:gap-10">
+        <div className="mt-8 animate-rise">
+          <p className="font-mono text-xs uppercase tracking-widest text-primary">01 · Source</p>
+          <h1 className="mt-3 font-display text-5xl leading-none">CHOOSE A VOICE.</h1>
+          <p className="mt-3 max-w-xl text-muted-foreground">Pick a speaker who inspires you and start learning!</p>
+          <p className="mt-3 max-w-xl text-muted-foreground">{tab === "new" ? "Paste a YouTube link, choose a clear WAV recording, or generate a clip with AI." : "Pick up a clip you've practiced before."}</p>
+        </div>
+        <div role="tablist" aria-label="Practice source" className="mt-6 grid grid-cols-2 rounded-2xl border border-ink/10 bg-card p-1 lg:mt-0 lg:w-80 lg:shrink-0">
+          {(["new", "continue"] as const).map((value) => (
+            <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)} className={`h-10 cursor-pointer rounded-xl text-sm font-medium transition-colors ${tab === value ? "bg-ink text-background" : "text-muted-foreground hover:text-foreground"}`}>
+              {value === "new" ? "New clip" : "Continue"}
+            </button>
+          ))}
+        </div>
       </div>
       {tab === "continue" ? (
-        <ContinueSessions className="mt-6" prompt={SAVE_PROMPT} onResume={onResume} onNew={() => setTab("new")} />
+        <ContinueSessions className="mt-6 lg:grid-cols-2 lg:gap-3" prompt={SAVE_PROMPT} onResume={onResume} onNew={() => setTab("new")} />
       ) : (
       <>
-      {!loading && !user && <SignInPrompt className="mt-6" {...SAVE_PROMPT} />}
-      <div className="mt-6 grid grid-cols-2 gap-3">
+      {!loading && !user}
+      <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-3 lg:gap-4">
         <Button onClick={() => setMode("youtube")} variant="outline" className={`h-auto min-h-40 cursor-pointer flex-col items-stretch justify-start rounded-2xl border p-4 text-left shadow-none transition-colors ${mode === "youtube" ? "border-primary bg-primary/5" : "border-ink/15 bg-card hover:border-ink/30"}`}>
           <div style={{ whiteSpace: 'normal', overflowWrap: 'break-word', width: '100%' }}>
               <div className="flex items-center justify-between"><Link2 className="size-5" /><span className="font-mono text-[10px] uppercase tracking-widest">{mode === "youtube" ? "Selected" : "Select"}</span></div>
@@ -62,10 +66,10 @@ export function SourceScreen({ tab, setTab, mode, setMode, url, setUrl, file, se
               <h2 className="mt-8 font-display text-2xl">UPLOAD AUDIO</h2><p className="mt-1 text-sm text-muted-foreground">Choose a WAV file from your device.</p>
           </div>
         </Button>
-        <Button onClick={() => setMode("generated")} variant="outline" className={`col-span-2 h-auto cursor-pointer flex-col items-stretch justify-start rounded-2xl border p-4 text-left shadow-none transition-colors ${mode === "generated" ? "border-primary bg-primary/5" : "border-ink/15 bg-card hover:border-ink/30"}`}>
+        <Button onClick={() => setMode("generated")} variant="outline" className={`col-span-2 h-auto cursor-pointer lg:col-span-1 lg:min-h-40 flex-col items-stretch justify-start rounded-2xl border p-4 text-left shadow-none transition-colors ${mode === "generated" ? "border-primary bg-primary/5" : "border-ink/15 bg-card hover:border-ink/30"}`}>
           <div style={{ whiteSpace: 'normal', overflowWrap: 'break-word', width: '100%' }}>
               <div className="flex items-center justify-between gap-3"><Sparkles className="size-5" /><span className="rounded-full bg-ink px-2.5 py-1 font-mono text-[10px] uppercase tracking-widest text-background">Powered by ElevenLabs</span></div>
-              <h2 className="mt-5 font-display text-2xl">GENERATE WITH AI</h2><p className="mt-1 text-sm text-muted-foreground">A new 30–60 second scene inspired by a well-known movie, voiced by ElevenLabs.</p>
+              <h2 className="mt-5 font-display text-2xl lg:mt-7">GENERATE WITH AI</h2><p className="mt-1 text-sm text-muted-foreground">A new 30–60 second scene inspired by a well-known movie, voiced by ElevenLabs.</p>
           </div>
         </Button>
         <input
@@ -81,19 +85,22 @@ export function SourceScreen({ tab, setTab, mode, setMode, url, setUrl, file, se
           }}
         />
       </div>
-      <div className="mt-6 rounded-2xl border border-ink/10 bg-card p-5">
-        <label htmlFor="source" className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">{{ youtube: "Video URL", upload: "Selected file", generated: "AI clip" }[mode]}</label>
-        {mode === "generated" ? (
-          <p id="source" className="mt-2 text-sm leading-relaxed">Gemini writes an original monologue inspired by a famous movie scene, and ElevenLabs voices it with a voice that fits the speaker. Every click makes a new clip.</p>
-        ) : mode === "youtube" ? (
-          <Input id="source" value={url} placeholder="https://youtube.com/watch?v=…" onChange={(event) => setUrl(event.target.value)} aria-invalid={Boolean(showProblem)} className="mt-2 h-12 rounded-xl border-ink/15 bg-background px-4 font-mono text-xs shadow-none" />
-        ) : (
-          <Button id="source" type="button" variant="outline" onClick={() => fileRef.current?.click()} className="mt-2 h-12 w-full justify-start rounded-xl border-ink/15 bg-background px-4 font-mono text-xs font-normal shadow-none">
-            <FileAudio className="size-4" /><span className="truncate">{file?.name ?? "Choose a .wav file…"}</span>
-          </Button>
-        )}
-        {showProblem && <p className="mt-2 text-xs text-destructive" role="alert">{problem}</p>}
-        <div className="mt-5 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 border-t border-ink/10 pt-5">
+      {/* Desktop: the input on the left, the preview and main action on the right. */}
+      <div className="mt-6 rounded-2xl border border-ink/10 bg-card p-5 lg:grid lg:grid-cols-2 lg:gap-8">
+        <div>
+          <label htmlFor="source" className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">{{ youtube: "Video URL", upload: "Selected file", generated: "AI clip" }[mode]}</label>
+          {mode === "generated" ? (
+            <p id="source" className="mt-2 text-sm leading-relaxed">Gemini writes an original monologue inspired by a famous movie scene, and ElevenLabs voices it with a voice that fits the speaker. Every click makes a new clip.</p>
+          ) : mode === "youtube" ? (
+            <Input id="source" value={url} placeholder="https://youtube.com/watch?v=…" onChange={(event) => setUrl(event.target.value)} aria-invalid={Boolean(showProblem)} className="mt-2 h-12 rounded-xl border-ink/15 bg-background px-4 font-mono text-xs shadow-none" />
+          ) : (
+            <Button id="source" type="button" variant="outline" onClick={() => fileRef.current?.click()} className="mt-2 h-12 w-full justify-start rounded-xl border-ink/15 bg-background px-4 font-mono text-xs font-normal shadow-none">
+              <FileAudio className="size-4" /><span className="truncate">{file?.name ?? "Choose a .wav file…"}</span>
+            </Button>
+          )}
+          {showProblem && <p className="mt-2 text-xs text-destructive" role="alert">{problem}</p>}
+        </div>
+        <div className="mt-5 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 border-t border-ink/10 pt-5 lg:mt-0 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
           <div className="grid size-14 place-items-center rounded-xl bg-ink text-background"><Play className="size-5 fill-current" /></div>
           <div className="min-w-0"><p className="truncate text-sm font-semibold">{preview.title}</p><p className="mt-1 truncate font-mono text-[10px] uppercase tracking-widest text-muted-foreground">{preview.detail}</p></div>
           {submitError && <p className="col-span-2 text-xs text-destructive" role="alert">{submitError}</p>}

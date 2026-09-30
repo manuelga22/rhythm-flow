@@ -27,6 +27,29 @@ log = logging.getLogger(__name__)
 
 Row = dict[str, Any]
 
+log = logging.getLogger("prosody_worker")
+
+# How long the worker trusts a claim_timeout read from job_settings.
+SETTINGS_TTL_SECONDS = 5 * 60
+
+_INTERVAL = re.compile(
+    r"^\s*(?:(?P<days>-?\d+) days?)?\s*"
+    r"(?:(?P<sign>-)?(?P<hours>\d+):(?P<minutes>\d{2}):(?P<seconds>\d{2}(?:\.\d+)?))?\s*$"
+)
+
+
+def parse_interval(value: str) -> float:
+    """Seconds in a Postgres interval as PostgREST returns it, e.g. "00:15:00"
+    or "1 day 02:00:00". Month and year units have no fixed length and are
+    rejected, like any other format."""
+    match = _INTERVAL.match(value)
+    if not match or not (match["days"] or match["hours"]):
+        raise ValueError(f"unsupported interval: {value!r}")
+    seconds = int(match["hours"] or 0) * 3600 + int(match["minutes"] or 0) * 60 + float(match["seconds"] or 0)
+    if match["sign"]:
+        seconds = -seconds
+    return int(match["days"] or 0) * 86400 + seconds
+
 
 class AnalysisStore(Protocol):
     def claim_next(self, analyzer_version: str) -> Row | None: ...
