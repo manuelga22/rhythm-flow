@@ -7,25 +7,29 @@ query the worker issues in one place.
 
 from __future__ import annotations
 
+import logging
 import re
-from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
 
 from prosody_worker.config import (
     ATTEMPT_BUCKET,
     AUDIO_BUCKET,
     CLAIM_TIMEOUT_SECONDS,
+    DRAIN_TIMEOUT_SECONDS,
     MAX_ATTEMPTS,
+    MAX_WORKERS,
+    RESERVATION_MARGIN_SECONDS,
+    WAITING_PER_WORKER,
     WorkerConfig,
 )
+
+log = logging.getLogger(__name__)
 
 Row = dict[str, Any]
 
 
 class AnalysisStore(Protocol):
-    def fetch_pending(self, analyzer_version: str, limit: int) -> list[Row]: ...
-
-    def claim(self, row: Row) -> bool: ...
+    def claim_next(self, analyzer_version: str) -> Row | None: ...
 
     def download_audio(self, path: str) -> bytes: ...
 
@@ -41,9 +45,7 @@ class AnalysisStore(Protocol):
 
 
 class AttemptStore(Protocol):
-    def fetch_pending_attempts(self, analyzer_version: str, limit: int) -> list[Row]: ...
-
-    def claim_attempt(self, row: Row) -> bool: ...
+    def claim_next_attempt(self, analyzer_version: str) -> Row | None: ...
 
     def fetch_reference(self, analysis_id: str) -> Row | None: ...
 
@@ -56,10 +58,21 @@ class AttemptStore(Protocol):
     def fail_attempt(self, row_id: str, message: str) -> None: ...
 
 
+class WorkerPool(Protocol):
+    """Reservations for the hosted workers (see prosody_worker/scaling.py)."""
+
+    def reserve_workers(self, queue: str, analyzer_version: str) -> list[str]: ...
+
+    def release_worker(self, worker_id: str) -> None: ...
+
+
 class SupabaseStore:
-    """``AnalysisStore`` and ``AttemptStore`` backed by supabase-py with the
-    service-role key. The client is not shared across threads, so each
-    worker thread builds its own store."""
+    """``AnalysisStore``, ``AttemptStore`` and ``WorkerPool`` backed by
+    supabase-py with the service-role key. The client is not shared across
+    threads, so each worker thread builds its own store.
+
+    A store remembers the claim token of each row it claimed, and writes a
+    result back only while the row still carries that token."""
 
     def __init__(self, config: WorkerConfig) -> None:
         try:
@@ -69,55 +82,31 @@ class SupabaseStore:
                 "supabase is not installed; pip install -r requirements-worker.txt"
             ) from exc
         self._client = create_client(config.supabase_url, config.service_role_key)
+        self._tokens: dict[str, str] = {}
 
     def _table(self, name: str = "analyses"):
         return self._client.table(name)
 
-    def fetch_pending(self, analyzer_version: str, limit: int) -> list[Row]:
-        return self._fetch_pending(
-            "analyses", "id,source_type,source_key,title,model_size,audio_path,generation,attempts",
-            analyzer_version, limit,
-        )
+    def claim_next(self, analyzer_version: str) -> Row | None:
+        return self._claim_next("claim_next_analysis", analyzer_version)
 
-    def _fetch_pending(self, table: str, columns: str, analyzer_version: str, limit: int) -> list[Row]:
-        stale = (datetime.now(timezone.utc) - timedelta(seconds=CLAIM_TIMEOUT_SECONDS)).isoformat()
-        response = (
-            self._table(table)
-            .select(columns)
-            .eq("status", "processing")
-            .eq("analyzer_version", analyzer_version)
-            .or_(f"claimed_at.is.null,claimed_at.lt.{stale}")
-            .order("created_at")
-            .limit(limit)
-            .execute()
-        )
-        return list(response.data or [])
+    def _claim_next(self, function: str, analyzer_version: str) -> Row | None:
+        """Claim the oldest pending row in one statement (FOR UPDATE SKIP
+        LOCKED), so workers asking at the same moment get different rows.
 
-    def claim(self, row: Row) -> bool:
-        return self._claim("analyses", row, "Analysis did not finish after several attempts.")
-
-    def _claim(self, table: str, row: Row, gave_up: str) -> bool:
-        """Compare-and-set on ``attempts`` so only one worker wins a row.
-
-        Rows that have already used up their attempts (a worker kept dying
-        on them) are marked failed instead of being retried forever.
+        The function also marks failed any row that has used up its
+        attempts (a worker kept dying on it) instead of retrying it forever.
         """
-        attempts = int(row.get("attempts") or 0)
-        if attempts >= MAX_ATTEMPTS:
-            self._fail(table, row["id"], gave_up)
-            return False
-        response = (
-            self._table(table)
-            .update({
-                "attempts": attempts + 1,
-                "claimed_at": datetime.now(timezone.utc).isoformat(),
-            })
-            .eq("id", row["id"])
-            .eq("status", "processing")
-            .eq("attempts", attempts)
-            .execute()
-        )
-        return bool(response.data)
+        response = self._client.rpc(function, {
+            "p_analyzer_version": analyzer_version,
+            "p_claim_timeout_seconds": CLAIM_TIMEOUT_SECONDS,
+            "p_max_attempts": MAX_ATTEMPTS,
+        }).execute()
+        row = response.data
+        if not row:
+            return None
+        self._tokens[row["id"]] = row["claim_token"]
+        return row
 
     def download_audio(self, path: str) -> bytes:
         return self._client.storage.from_(AUDIO_BUCKET).download(path)
@@ -129,10 +118,19 @@ class SupabaseStore:
         self._fail("analyses", row_id, message)
 
     def _complete(self, table: str, row_id: str, fields: Row) -> None:
-        self._table(table).update({**fields, "status": "ready", "error": None}).eq("id", row_id).execute()
+        self._finish(table, row_id, {**fields, "status": "ready", "error": None})
 
     def _fail(self, table: str, row_id: str, message: str) -> None:
-        self._table(table).update({"status": "failed", "error": message[:500]}).eq("id", row_id).execute()
+        self._finish(table, row_id, {"status": "failed", "error": message[:500]})
+
+    def _finish(self, table: str, row_id: str, fields: Row) -> None:
+        query = self._table(table).update(fields).eq("id", row_id)
+        token = self._tokens.pop(row_id, None)
+        if token:
+            query = query.eq("claim_token", token)
+        response = query.execute()
+        if token and not response.data:
+            log.warning("%s %s was claimed again by another worker; result discarded", table, row_id)
 
     def upload_audio(self, path: str, data: bytes, content_type: str = "audio/wav", upsert: bool = False) -> None:
         """Store reference audio. Upload paths are content-addressed, so an
@@ -164,17 +162,8 @@ class SupabaseStore:
 
     # -- attempts --------------------------------------------------------
 
-    def fetch_pending_attempts(self, analyzer_version: str, limit: int) -> list[Row]:
-        return self._fetch_pending(
-            "attempts",
-            "id,analysis_id,phrase_id,audio_path,model_size,attempts,feedback_model,"
-            "feedback_models(provider,model,label)",
-            analyzer_version,
-            limit,
-        )
-
-    def claim_attempt(self, row: Row) -> bool:
-        return self._claim("attempts", row, "Feedback did not finish after several attempts.")
+    def claim_next_attempt(self, analyzer_version: str) -> Row | None:
+        return self._claim_next("claim_next_attempt", analyzer_version)
 
     def fetch_reference(self, analysis_id: str) -> Row | None:
         """The reference ``recording`` and its listening ``clip_path``."""
@@ -193,3 +182,20 @@ class SupabaseStore:
 
     def fail_attempt(self, row_id: str, message: str) -> None:
         self._fail("attempts", row_id, message)
+
+    # -- worker pool -----------------------------------------------------
+
+    def reserve_workers(self, queue: str, analyzer_version: str) -> list[str]:
+        """Reserve the workers ``queue`` is short of and return their ids."""
+        response = self._client.rpc("reserve_workers", {
+            "p_queue": queue,
+            "p_analyzer_version": analyzer_version,
+            "p_waiting_per_worker": WAITING_PER_WORKER,
+            "p_max_workers": MAX_WORKERS[queue],
+            "p_lifetime_seconds": DRAIN_TIMEOUT_SECONDS[queue] + RESERVATION_MARGIN_SECONDS,
+            "p_claim_timeout_seconds": CLAIM_TIMEOUT_SECONDS,
+        }).execute()
+        return list(response.data or [])
+
+    def release_worker(self, worker_id: str) -> None:
+        self._table("queue_workers").delete().eq("id", worker_id).execute()

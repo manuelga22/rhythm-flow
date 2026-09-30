@@ -1,10 +1,14 @@
 """Hosted worker on Modal: drain the queues on demand instead of polling.
 
 A Postgres trigger (``supabase/migrations/*_worker_webhook.sql``) POSTs to
-``wake`` whenever an analysis or attempt is queued, which spawns the
-matching drain. ``sweep`` runs both drains every few minutes as a safety
-net for lost webhooks and claims left behind by a killed container.
-Nothing runs, and nothing is billed, while the queues are empty.
+``wake`` whenever an analysis or attempt is queued. ``wake`` asks the
+database how many workers the queue needs (one per two waiting jobs, up to
+MAX_WORKERS; see prosody_worker/scaling.py) and spawns the missing ones.
+Each worker is a drain: it claims one job at a time until the queue is
+empty or its claim deadline passes, then exits and re-checks the pool.
+``sweep`` re-checks both pools every few minutes as a safety net for lost
+webhooks and claims left behind by a killed container. Nothing runs, and
+nothing is billed, while the queues are empty.
 
 Deploy from this directory:
 
@@ -18,12 +22,16 @@ Local development is unchanged: ``python -m prosody_worker`` still polls.
 
 from __future__ import annotations
 
+import asyncio
 import hmac
 import logging
 import os
 import threading
+import time
 
 import modal
+
+from prosody_worker.config import CLAIM_DEADLINE_SECONDS, DRAIN_TIMEOUT_SECONDS, MAX_WORKERS
 
 
 def download_model() -> None:
@@ -56,32 +64,54 @@ app = modal.App("prosody-worker", image=image)
 secrets = [modal.Secret.from_name("prosody-worker")]
 
 
-def drain(queue: str) -> None:
-    """Process everything pending in ``queue``, then return."""
+def _store():
+    from prosody_worker.config import WorkerConfig
+    from prosody_worker.store import SupabaseStore
+
+    return SupabaseStore(WorkerConfig.from_env())
+
+
+def drain(queue: str, worker_id: str) -> None:
+    """Process pending jobs in ``queue`` one at a time until it is empty or
+    the claim deadline passes, then give up this worker's place in the pool."""
     from prosody_worker.config import WorkerConfig
     from prosody_worker.main import poll, run_attempts_once, run_once
-    from prosody_worker.store import SupabaseStore
+    from prosody_worker.scaling import scale
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s [%(threadName)s] %(message)s")
     threading.current_thread().name = queue
     config = WorkerConfig.from_env()
     run = run_once if queue == "analyses" else run_attempts_once
-    poll(run, SupabaseStore(config), threading.Event(), config.poll_seconds, config.batch_size, once=True)
+    deadline = time.monotonic() + CLAIM_DEADLINE_SECONDS[queue]
+    store = _store()
+    try:
+        poll(run, store, threading.Event(), config.poll_seconds, config.batch_size, once=True, deadline=deadline)
+    finally:
+        store.release_worker(worker_id)
+        # Jobs left waiting when the deadline passed get a fresh worker now
+        # rather than at the next sweep.
+        scale(store, queue, DRAINS[queue].spawn)
 
 
-# Timeout stays under CLAIM_TIMEOUT_SECONDS so a killed run's row becomes
-# claimable again soon after. One container per queue: overlapping wakes
-# queue up behind it and find nothing left to do.
-@app.function(secrets=secrets, cpu=2, memory=2048, timeout=14 * 60, max_containers=1)
-def drain_analyses() -> None:
-    drain("analyses")
+# The timeout stays under CLAIM_TIMEOUT_SECONDS, so a claim never expires
+# while its worker is still alive. max_containers matches the pool size
+# reserve_workers() allows, one job per container.
+@app.function(
+    secrets=secrets, cpu=2, memory=2048,
+    timeout=DRAIN_TIMEOUT_SECONDS["analyses"], max_containers=MAX_WORKERS["analyses"],
+)
+def drain_analyses(worker_id: str) -> None:
+    drain("analyses", worker_id)
 
 
 # Separate from analyses so a learner's take never waits behind a long
 # reference analysis.
-@app.function(secrets=secrets, cpu=2, memory=2048, timeout=5 * 60, max_containers=1)
-def drain_attempts() -> None:
-    drain("attempts")
+@app.function(
+    secrets=secrets, cpu=2, memory=2048,
+    timeout=DRAIN_TIMEOUT_SECONDS["attempts"], max_containers=MAX_WORKERS["attempts"],
+)
+def drain_attempts(worker_id: str) -> None:
+    drain("attempts", worker_id)
 
 
 DRAINS = {"analyses": drain_analyses, "attempts": drain_attempts}
@@ -89,8 +119,10 @@ DRAINS = {"analyses": drain_analyses, "attempts": drain_attempts}
 
 @app.function(secrets=secrets)
 @modal.fastapi_endpoint(method="POST")
-async def wake(request: Request) -> dict[str, str]:
+async def wake(request: Request) -> dict[str, str | int]:
     """Called by the database trigger with ``{"queue": "analyses" | "attempts"}``."""
+    from prosody_worker.scaling import scale
+
     expected = f"Bearer {os.environ['WORKER_WEBHOOK_TOKEN']}"
     if not hmac.compare_digest(request.headers.get("authorization", ""), expected):
         raise HTTPException(status_code=401, detail="bad token")
@@ -101,11 +133,15 @@ async def wake(request: Request) -> dict[str, str]:
     queue = payload.get("queue") if isinstance(payload, dict) else None
     if queue not in DRAINS:
         raise HTTPException(status_code=400, detail=f"queue must be one of {', '.join(DRAINS)}")
-    await DRAINS[queue].spawn.aio()
-    return {"queued": queue}
+    # supabase-py is synchronous; keep it off the event loop.
+    spawned = await asyncio.to_thread(scale, _store(), queue, DRAINS[queue].spawn)
+    return {"queue": queue, "spawned": spawned}
 
 
 @app.function(secrets=secrets, schedule=modal.Period(minutes=10))
 def sweep() -> None:
-    for fn in DRAINS.values():
-        fn.spawn()
+    from prosody_worker.scaling import scale
+
+    store = _store()
+    for queue, fn in DRAINS.items():
+        scale(store, queue, fn.spawn)

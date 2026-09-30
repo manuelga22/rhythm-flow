@@ -1,4 +1,4 @@
-"""Polling loops: claim pending jobs and process them one at a time.
+"""Worker loops: claim pending jobs and process them one at a time.
 
 Two queues run side by side, each on its own thread with its own Supabase
 client:
@@ -14,8 +14,9 @@ Usage:
     SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... python -m prosody_worker
     python -m prosody_worker --once      # drain both queues, then exit
 
-TODO: replace polling with a Supabase Database Webhook on INSERT (or pgmq)
-that wakes the worker, keeping the poll as a slow safety net.
+Each claim takes one row atomically, so any number of workers can share a
+queue. The hosted worker (modal_app.py) is woken by a database webhook
+instead of polling and runs ``poll(..., once=True)`` per worker.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ import argparse
 import logging
 import shutil
 import threading
+import time
 from typing import Any, Callable
 
 from prosody_worker.attempts import process_attempt
@@ -38,9 +40,10 @@ log = logging.getLogger("prosody_worker")
 def run_once(store: AnalysisStore, batch_size: int = 1) -> int:
     """Process whatever analyses are pending right now. Returns the number handled."""
     handled = 0
-    for row in store.fetch_pending(ANALYZER_VERSION, batch_size):
-        if not store.claim(row):
-            continue
+    for _ in range(batch_size):
+        row = store.claim_next(ANALYZER_VERSION)
+        if row is None:
+            break
         log.info("claimed analysis %s (%s)", row["id"], row["source_key"])
         try:
             process(row, store)
@@ -53,9 +56,10 @@ def run_once(store: AnalysisStore, batch_size: int = 1) -> int:
 def run_attempts_once(store: AttemptStore, batch_size: int = 1) -> int:
     """Process whatever attempts are pending right now. Returns the number handled."""
     handled = 0
-    for row in store.fetch_pending_attempts(ANALYZER_VERSION, batch_size):
-        if not store.claim_attempt(row):
-            continue
+    for _ in range(batch_size):
+        row = store.claim_next_attempt(ANALYZER_VERSION)
+        if row is None:
+            break
         log.info("claimed attempt %s (analysis %s, phrase %s)", row["id"], row["analysis_id"], row.get("phrase_id") or "all")
         try:
             process_attempt(row, store)
@@ -72,9 +76,14 @@ def poll(
     poll_seconds: float,
     batch_size: int = 1,
     once: bool = False,
+    deadline: float | None = None,
 ) -> None:
-    """Call ``run`` until ``stop`` is set, or until the queue is empty when ``once``."""
+    """Call ``run`` until ``stop`` is set, or until the queue is empty when
+    ``once``. No new job is claimed once ``deadline`` (a ``time.monotonic()``
+    value) has passed."""
     while not stop.is_set():
+        if deadline is not None and time.monotonic() >= deadline:
+            return
         try:
             handled = run(store, batch_size)
         except Exception:

@@ -47,6 +47,19 @@ TTS_MODEL = os.environ.get("PROSODY_TTS_MODEL", "eleven_multilingual_v2")
 CLAIM_TIMEOUT_SECONDS = 15 * 60
 MAX_ATTEMPTS = 3
 
+# Hosted worker pool (modal_app.py). Each worker handles one job at a time;
+# a queue gets one worker per WAITING_PER_WORKER waiting rows, up to its cap.
+WAITING_PER_WORKER = 2
+MAX_WORKERS = {"analyses": 3, "attempts": 10}
+# A worker is killed after DRAIN_TIMEOUT_SECONDS. That must stay under
+# CLAIM_TIMEOUT_SECONDS, so a claim is never reclaimed while its worker is
+# alive, and it stops claiming after CLAIM_DEADLINE_SECONDS, leaving time to
+# finish the job in hand.
+DRAIN_TIMEOUT_SECONDS = {"analyses": 14 * 60, "attempts": 5 * 60}
+CLAIM_DEADLINE_SECONDS = {"analyses": 7 * 60, "attempts": 3 * 60}
+# Extra life for a reservation, covering the wait for a container to start.
+RESERVATION_MARGIN_SECONDS = 2 * 60
+
 
 @dataclass
 class WorkerConfig:

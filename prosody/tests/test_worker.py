@@ -29,7 +29,8 @@ from prosody_worker.attempts import NO_SPEECH, process_attempt, reference_excerp
 from prosody_worker.generate import GeneratedClip
 from prosody_worker.importer import import_analysis, load_recording
 from prosody_worker.jobs import process
-from prosody_worker.main import poll
+from prosody_worker.main import poll, run_attempts_once
+from prosody_worker.scaling import scale
 from prosody_worker.serialize import to_practice_view
 from prosody_worker.sources import (
     ResolvedSource,
@@ -69,12 +70,11 @@ class FakeStore:
         self.uploaded: dict[str, bytes] = {}
         self.content_types: dict[str, str] = {}
         self.upserted: list[dict] = []
+        self.pending: list[dict] = []
+        self.pending_attempts: list[dict] = []
 
-    def fetch_pending(self, analyzer_version, limit):
-        return []
-
-    def claim(self, row):
-        return True
+    def claim_next(self, analyzer_version):
+        return self.pending.pop(0) if self.pending else None
 
     def download_audio(self, path):
         if path not in self.audio:
@@ -100,11 +100,8 @@ class FakeStore:
         return row
 
     # AttemptStore
-    def fetch_pending_attempts(self, analyzer_version, limit):
-        return []
-
-    def claim_attempt(self, row):
-        return True
+    def claim_next_attempt(self, analyzer_version):
+        return self.pending_attempts.pop(0) if self.pending_attempts else None
 
     def fetch_reference(self, analysis_id):
         return self.references.get(analysis_id)
@@ -796,6 +793,69 @@ def test_poll_survives_errors_and_once_stops_when_empty():
     # ...and the next run drains the rest and stops on the empty poll.
     poll(run, None, threading.Event(), 0.01, once=True)
     assert calls == 4
+
+
+def test_run_attempts_once_claims_until_the_queue_is_empty():
+    store = FakeStore()
+    store.pending_attempts = [{"id": f"attempt-{n}", "analysis_id": "a"} for n in range(3)]
+    processed = []
+    import prosody_worker.main as main_module
+
+    original = main_module.process_attempt
+    main_module.process_attempt = lambda row, store: processed.append(row["id"])
+    try:
+        assert run_attempts_once(store, batch_size=2) == 2
+        assert run_attempts_once(store, batch_size=2) == 1
+        assert run_attempts_once(store, batch_size=2) == 0
+    finally:
+        main_module.process_attempt = original
+    assert processed == ["attempt-0", "attempt-1", "attempt-2"]
+
+
+def test_poll_claims_nothing_after_its_deadline():
+    calls = 0
+
+    def run(store, batch_size):
+        nonlocal calls
+        calls += 1
+        return 1
+
+    poll(run, None, threading.Event(), 0.01, once=True, deadline=time.monotonic() - 1)
+    assert calls == 0
+
+
+class FakePool:
+    def __init__(self, reserved: list[str]) -> None:
+        self.reserved = reserved
+        self.released: list[str] = []
+
+    def reserve_workers(self, queue, analyzer_version):
+        return list(self.reserved)
+
+    def release_worker(self, worker_id):
+        self.released.append(worker_id)
+
+
+def test_scale_spawns_one_worker_per_reservation():
+    pool = FakePool(["w1", "w2"])
+    spawned = []
+    assert scale(pool, "attempts", spawned.append) == 2
+    assert spawned == ["w1", "w2"]
+    assert pool.released == []
+
+
+def test_scale_releases_a_reservation_it_could_not_start():
+    pool = FakePool(["w1", "w2"])
+    spawned = []
+
+    def spawn(worker_id):
+        if worker_id == "w1":
+            raise RuntimeError("platform unavailable")
+        spawned.append(worker_id)
+
+    assert scale(pool, "attempts", spawn) == 1
+    assert spawned == ["w2"]
+    assert pool.released == ["w1"]
 
 
 # --------------------------------------------------------------------------

@@ -271,9 +271,13 @@ from that file (via python-dotenv); variables set in the shell win.
 `modal_app.py` runs the worker on [Modal](https://modal.com) without a
 machine that polls forever. When an analysis or attempt is queued, a
 database trigger (`../supabase/migrations/*_worker_webhook.sql`) POSTs to
-the `wake` endpoint. That endpoint spawns a function that drains the queue
-and exits. A `sweep` every 10 minutes picks up anything a lost webhook or a
-killed run left behind. Modal bills only while a drain runs, so a demo fits
+the `wake` endpoint. That endpoint asks the database how many workers the
+queue needs (one per two waiting jobs, capped at 10 for attempts and 3 for
+analyses; see `prosody_worker/config.py`) and spawns the missing ones. Each
+worker handles one job at a time, claiming rows with `FOR UPDATE SKIP
+LOCKED` so workers never collide, and exits when the queue is empty. A
+`sweep` every 10 minutes picks up anything a lost webhook or a killed run
+left behind. Modal bills only while a drain runs, so a demo fits
 in the free Starter credit. The image bakes in the Whisper model, so a cold
 start doesn't download it.
 
