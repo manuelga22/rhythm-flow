@@ -26,7 +26,7 @@ const steps = [
 
 function MethodPage() {
   return (
-    <div className="min-h-screen bg-background text-foreground antialiased">
+    <div className="min-h-screen bg-background text-foreground antialiased lg:pl-56">
         <Header />
 
         <main className="device-column px-5 pb-32 pt-6">

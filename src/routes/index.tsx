@@ -19,7 +19,7 @@ export const Route = createFileRoute("/")({
 
 function HomePage() {
   return (
-    <div className="min-h-screen bg-background text-foreground antialiased">
+    <div className="min-h-screen bg-background text-foreground antialiased lg:pl-56">
       <Header />
       <DashboardScreen />
       <BottomBar active="home" />

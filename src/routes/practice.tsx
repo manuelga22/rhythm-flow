@@ -130,7 +130,7 @@ function PracticePage() {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground antialiased">
+    <div className="min-h-screen bg-background text-foreground antialiased lg:pl-56">
       <Header stage={stage} />
       {stage === "source" && (
         <SourceScreen tab={sourceTab} setTab={setSourceTab} mode={sourceMode} setMode={setSourceMode} url={url} setUrl={setUrl} file={file} setFile={setFile} fileRef={fileRef} submitError={analysisStatus === "failed" ? analysisError : null} submitting={submitting} onBack={() => navigate({ to: "/" })} onContinue={analyze} onResume={resume} />
